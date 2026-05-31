@@ -1,0 +1,42 @@
+{
+  "summary": "Backend testing for Smart File Scan & Dedup app: 30/30 tests passed (100%). All requested flows verified incl. JWT auth (signup/login/me), source endpoints (gdrive/dropbox invalid token rejection), file upload with sha256+text preview+is_generic_name, duplicate detection via Claude Sonnet 4.5 (real LLM call), AI rename suggestions, rename, delete, dashboard stats, and security (401 on protected endpoints without token). MongoDB _id is correctly excluded from all responses (verified). Deprecated 'shadow*' style props warning observed in Expo logs (frontend only, not in scope for backend testing but worth flagging).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sources/gdrive & /api/sources/dropbox", "issue": "External-token validation returns 400 wrapping the upstream error. Acceptable, but could be 401 for clarity when the upstream is Unauthorized."},
+      {"endpoint": "Startup events", "issue": "Uses deprecated FastAPI @app.on_event('startup'/'shutdown') decorators. Should migrate to lifespan context manager."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Multiple components (frontend - not in scope)", "issue": "Expo logs show repeated 'shadow* style props are deprecated. Use boxShadow' warnings. Reference: /var/log/supervisor/expo.err.log"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Replace @app.on_event with FastAPI lifespan context manager.",
+    "(Frontend, future) Update RN styles: replace shadowColor/shadowOffset/shadowOpacity/shadowRadius with boxShadow per RN web warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~800 lines - consider splitting into routers (auth, files, sources, scan, dashboard) and a services layer (ai, drive, dropbox) for maintainability.",
+    "rename_file updates by {id} only without scoping to user_id in the $set call (the prior find_one already scopes by user_id, so safe in practice, but defense-in-depth would add user_id to the update filter).",
+    "dropbox_download_sample interpolates the path directly into the Dropbox-API-Arg header without JSON-escaping; a path containing a quote would break the header. Use json.dumps to build the arg."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_backend_api.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (out of scope)"},
+  "seed_data_creation": "Each run creates a fresh signup user test_<rand>@filescan.app and uploads 3 small text files; one duplicate is deleted at end of run. No persistent seed data left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "BASE_URL is read from EXPO_PUBLIC_BACKEND_URL (frontend/.env). Note: there is no EXPO_BACKEND_URL key in frontend/.env, only EXPO_PUBLIC_BACKEND_URL. Tests are idempotent (use random email). The AI tests do real Claude Sonnet 4.5 calls via EMERGENT_LLM_KEY and may take ~10-30s; pytest timeouts are set to 60-90s.",
+  "rca_of_issue": "N/A - no failures."
+}
