@@ -514,6 +514,54 @@ async def upload_file(
     return rec
 
 
+class FileRegisterItem(BaseModel):
+    name: str
+    size: int = 0
+    mime_type: str = ""
+    sha256: str
+    external_id: Optional[str] = None  # device asset id
+    created_at: Optional[str] = None
+
+
+class FileRegisterBatch(BaseModel):
+    items: List[FileRegisterItem]
+
+
+@api.post("/files/register")
+async def register_files(body: FileRegisterBatch, current: dict = Depends(get_current_user)):
+    """Register device media (photos/videos) by metadata + hash only — no upload.
+    Skips already-registered (same sha256 + external_id) records."""
+    added = 0
+    for item in body.items:
+        # dedupe by (user, sha256, external_id) to avoid re-adding the same asset
+        existing = await files_col.find_one({
+            "user_id": current["id"],
+            "sha256": item.sha256,
+            "source": "internal",
+            "external_id": item.external_id,
+        })
+        if existing:
+            continue
+        rec = {
+            "id": str(uuid.uuid4()),
+            "user_id": current["id"],
+            "source": "internal",
+            "source_id": None,
+            "external_id": item.external_id,
+            "name": item.name,
+            "size": item.size,
+            "mime_type": item.mime_type,
+            "sha256": item.sha256,
+            "text_preview": "",
+            "is_generic_name": is_generic_name(item.name),
+            "ai_suggested_name": None,
+            "created_at": item.created_at or datetime.now(timezone.utc).isoformat(),
+        }
+        await files_col.insert_one(rec)
+        added += 1
+    return {"added": added, "submitted": len(body.items)}
+
+
 @api.get("/files")
 async def list_files(current: dict = Depends(get_current_user)):
     files = await files_col.find(

@@ -87,6 +87,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ new_name }),
     }),
+  registerFiles: (items: any[]) =>
+    request<{ added: number; submitted: number }>("/files/register", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
 
   // scan
   scanGDrive: (sourceId: string) =>
