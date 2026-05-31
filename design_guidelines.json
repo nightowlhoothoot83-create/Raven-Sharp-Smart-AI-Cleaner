@@ -1,0 +1,120 @@
+{
+  "theme": "LIGHT",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) + Soft Utility Twist",
+  "design_philosophy": "E1: Emotion First. A file cleaner app must evoke trust, clarity, and precision. Deleting data is anxiety-inducing; therefore, the UI must feel like a perfectly organized, brightly lit control room. We mix Swiss Brutalist precision (for data truth) with Soft Utility (rounded tactile surfaces) to make destructive actions feel safe and deliberate.",
+  "typography": {
+    "strategy": "The Anti-Default Rule. We avoid generic system sans. Headings use structured but approachable sans, while body text uses a sterile, technical sans for file paths and sizes.",
+    "heading_font": "Manrope",
+    "body_font": "IBM Plex Sans",
+    "scales_tailwind": {
+      "h1": "text-4xl tracking-tighter leading-tight font-black",
+      "h2": "text-2xl tracking-tight leading-snug font-bold",
+      "h3": "text-xl tracking-tight leading-snug font-semibold",
+      "body": "text-base leading-normal font-normal",
+      "body_small": "text-sm leading-normal font-medium",
+      "label_overline": "text-xs tracking-[0.2em] uppercase font-bold text-gray-500"
+    }
+  },
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#666666",
+    "primary_cobalt": "#0052FF",
+    "destructive_red": "#FF3B30",
+    "ai_amber": "#FF9F0A",
+    "success_green": "#34C759",
+    "border": "#E5E5E5",
+    "surface_hover_active": "#F4F4F5"
+  },
+  "spacing_and_layout": {
+    "strategy": "Generous mobile spacing. Elements must not feel cramped, especially when comparing files.",
+    "screen_padding": "px-6",
+    "section_gap": "gap-8",
+    "card_padding": "p-5",
+    "border_radius": {
+      "card": "rounded-3xl",
+      "button": "rounded-full",
+      "bottom_sheet": "rounded-t-[32px]",
+      "image_preview": "rounded-2xl"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary_cobalt text-white rounded-full py-4 px-6 font-bold text-center w-full",
+      "destructive": "bg-destructive_red text-white rounded-full py-4 px-6 font-bold text-center w-full shadow-[0_4px_14px_0_rgba(255,59,48,0.39)]",
+      "secondary": "bg-[#F4F4F5] text-[#0A0A0A] rounded-full py-4 px-6 font-bold text-center w-full"
+    },
+    "cards_bento": {
+      "style": "bg-white rounded-3xl p-5 border border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
+      "usage": "Dashboard stats (Total scanned, Storage saved), File connection sources."
+    },
+    "bottom_sheet": {
+      "style": "bg-white rounded-t-[32px] shadow-[0_-10px_40px_rgb(0,0,0,0.1)] px-6 pb-10 pt-4",
+      "usage": "Use for all context actions: File preview, Bulk delete confirmation, AI rename approval. Avoid full screen navigation for micro-tasks."
+    },
+    "file_duplicate_group": {
+      "style": "bg-white rounded-3xl border border-black/10 overflow-hidden mb-6",
+      "header": "bg-gray-50 px-5 py-3 border-b border-black/5 flex justify-between items-center",
+      "row_kept": "px-5 py-4 bg-white border-l-4 border-primary_cobalt",
+      "row_deleted": "px-5 py-4 bg-red-50/50 opacity-80"
+    },
+    "ai_rename_card": {
+      "style": "bg-[#FFF9EC] rounded-3xl p-5 border border-ai_amber/30",
+      "icon_color": "text-ai_amber",
+      "suggestion_text": "text-ai_amber font-bold font-heading text-lg"
+    }
+  },
+  "screens": {
+    "auth": {
+      "layout": "Full height. Abstract geometric background behind a bottom heavy login sheet.",
+      "background_image": "auth_background"
+    },
+    "dashboard": {
+      "layout": "Scrollable. Top: Large typographic greeting + Total storage recoverable in H1. Middle: Bento grid of connected sources (Internal, GDrive, Dropbox). Bottom: 'Start Smart Scan' primary CTA sticky at bottom."
+    },
+    "scan_progress": {
+      "layout": "Centered massive progress circle (Cobalt). Abstract 3D storage connected graphic in the background.",
+      "background_image": "storage_connected",
+      "typography": "Running file paths rapidly changing below the circle in IBM Plex Sans (text-xs text-gray-400)."
+    },
+    "duplicate_resolver": {
+      "layout": "List of 'Duplicate Groups'. Each group uses 'file_duplicate_group' component showing side-by-side comparison of metadata (Size, Date, Dimensions) to justify the 'Most Comprehensive' auto-selection. Sticky 'Bulk Delete' button at bottom."
+    },
+    "ai_rename_flow": {
+      "layout": "Tinder-like cards or vertical list of 'ai_rename_card'. Shows Generic Name (e.g., 'IMG_0023.jpg') -> AI Suggestion ('Paris_Trip_Eiffel_Tower.jpg'). Approve/Reject buttons."
+    }
+  },
+  "image_urls": [
+    {
+      "slug": "auth_background",
+      "url": "https://static.prod-images.emergentagent.com/jobs/72bca499-1276-43a4-8281-13fffeff925b/images/fa0d59f128e2ff6e8ec1d51648cda1c5596b617d555e9d5c36b1cbf0e9aef3ce.png",
+      "description": "Abstract geometric composition with stacked frosted glass layers and blue accents. Use for Login/Signup screen background.",
+      "placement": "Full bleed background on Auth screen under the login bottom sheet."
+    },
+    {
+      "slug": "empty_state_clean",
+      "url": "https://static.prod-images.emergentagent.com/jobs/72bca499-1276-43a4-8281-13fffeff925b/images/8a477f531820bfd24d1cbdc779f392fb8cbc446c4b441c387352e61ba11dad3b.png",
+      "description": "3D filing cabinet drawer perfectly organized.",
+      "placement": "Use when scanning is complete and zero duplicates/generic files are found. 'You are perfectly organized' state."
+    },
+    {
+      "slug": "storage_connected",
+      "url": "https://static.prod-images.emergentagent.com/jobs/72bca499-1276-43a4-8281-13fffeff925b/images/387d3c0e295fac5f5f910628664b88bd7ef90dcdcd69ef7067c9b1a65682d824.png",
+      "description": "Abstract 3D interconnected geometric floating data blocks.",
+      "placement": "Use on the 'Scan Progress' screen or 'Connect Storage' empty state."
+    }
+  ],
+  "icons_strategy": "Use Phosphor Icons (phosphor-react-native or expo/vector-icons equivalent). They provide a highly legible, technical look perfect for file extensions and UI actions.",
+  "testing_instructions": {
+    "requirement": "CRITICAL: All interactive and key informational elements MUST include a `data-testid` attribute (or `testID` in React Native) to facilitate robust automated testing.",
+    "convention": "kebab-case, role-based. e.g., `testID='btn-start-scan'`, `testID='input-email'`."
+  },
+  "instructions_to_main_agent": [
+    "This is an Expo React Native app. Apply the Tailwind classes using NativeWind or translate them to StyleSheet objects.",
+    "Ensure the fonts Manrope and IBM Plex Sans are loaded via expo-font.",
+    "Never use generic HTML elements (div, span) in RN. Use View, Text, TouchableOpacity.",
+    "For the duplicate groups, ensure the visual hierarchy clearly differentiates between the file to KEEP (Cobalt highlight) and the files to DELETE (Red highlight).",
+    "Use the provided image_urls for backgrounds and empty states. Do not use generic placeholders."
+  ]
+}
