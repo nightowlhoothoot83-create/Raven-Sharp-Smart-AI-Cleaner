@@ -346,9 +346,10 @@ async def dropbox_list_files(access_token: str) -> List[dict]:
 
 
 async def dropbox_download_sample(access_token: str, path: str, max_bytes: int = 200000) -> bytes:
+    import json
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Dropbox-API-Arg": f'{{"path":"{path}"}}',
+        "Dropbox-API-Arg": json.dumps({"path": path}),
         "Range": f"bytes=0-{max_bytes-1}",
     }
     async with httpx.AsyncClient(timeout=30) as ac:
