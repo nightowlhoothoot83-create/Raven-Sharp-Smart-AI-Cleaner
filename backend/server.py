@@ -625,11 +625,18 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
     if not src:
         raise HTTPException(404, "Source not found")
     files = await drive_list_files(src["access_token"], page_size=100)
+    # Batch existence check to avoid N+1
+    existing_ids = {
+        doc["external_id"]
+        async for doc in files_col.find(
+            {"user_id": current["id"], "source_id": source_id},
+            {"external_id": 1, "_id": 0},
+        )
+    }
     added = 0
     for f in files:
         external_id = f["id"]
-        # skip if already scanned
-        if await files_col.find_one({"user_id": current["id"], "source_id": source_id, "external_id": external_id}):
+        if external_id in existing_ids:
             continue
         name = f.get("name", "unnamed")
         mime = f.get("mimeType", "")
@@ -674,12 +681,20 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
     if not src:
         raise HTTPException(404, "Source not found")
     files = await dropbox_list_files(src["access_token"])
+    # Batch existence check to avoid N+1
+    existing_ids = {
+        doc["external_id"]
+        async for doc in files_col.find(
+            {"user_id": current["id"], "source_id": source_id},
+            {"external_id": 1, "_id": 0},
+        )
+    }
     added = 0
     for f in files:
         external_id = f.get("path_lower") or f.get("path_display") or f.get("id")
         if not external_id:
             continue
-        if await files_col.find_one({"user_id": current["id"], "source_id": source_id, "external_id": external_id}):
+        if external_id in existing_ids:
             continue
         name = f.get("name", "unnamed")
         size = int(f.get("size", 0) or 0)
