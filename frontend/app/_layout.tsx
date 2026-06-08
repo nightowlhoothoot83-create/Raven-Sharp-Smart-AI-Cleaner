@@ -24,7 +24,7 @@ function NavGate() {
   }, [user, ready, segments, router]);
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#FAFAFA" } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#05050D" } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(app)" />
@@ -42,11 +42,11 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#05050D" }}>
       <KeyboardProvider>
         <SafeAreaProvider>
           <AuthProvider>
-            <StatusBar style="dark" />
+            <StatusBar style="light" />
             <NavGate />
           </AuthProvider>
         </SafeAreaProvider>

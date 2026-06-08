@@ -142,7 +142,7 @@ export default function Duplicates() {
                       onPress={() => toggle(f.id, isKeep)}
                       disabled={isKeep}
                     >
-                      <View style={[styles.fileIconBox, { backgroundColor: isKeep ? "#E8F0FE" : "#FFF1F0" }]}>
+                      <View style={[styles.fileIconBox, { backgroundColor: isKeep ? colors.surfaceElevated : colors.destructiveSoft }]}>
                         <Ionicons name={isKeep ? "checkmark-circle" : "trash-outline"} size={20} color={isKeep ? colors.primary : colors.destructive} />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -195,22 +195,22 @@ const styles = StyleSheet.create({
   scanCta: { marginTop: spacing.xl, backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: radius.button },
   scanCtaText: { color: "#fff", fontWeight: "700" },
 
-  summaryCard: { backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: "rgba(0,0,0,0.04)" },
+  summaryCard: { backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
 
-  group: { backgroundColor: colors.surface, borderRadius: radius.card, marginBottom: spacing.md, borderWidth: 1, borderColor: "rgba(0,0,0,0.08)", overflow: "hidden" },
-  groupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#F8F8F8", paddingHorizontal: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.04)" },
-  reasonRow: { flexDirection: "row", gap: 6, alignItems: "flex-start", padding: spacing.md, backgroundColor: colors.amberBg, borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.04)" },
+  group: { backgroundColor: colors.surface, borderRadius: radius.card, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+  groupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colors.surfaceElevated, paddingHorizontal: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reasonRow: { flexDirection: "row", gap: 6, alignItems: "flex-start", padding: spacing.md, backgroundColor: colors.aiSoft, borderBottomWidth: 1, borderBottomColor: colors.border },
 
-  fileRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.04)" },
+  fileRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   fileRowKeep: { backgroundColor: colors.surface, borderLeftWidth: 4, borderLeftColor: colors.primary },
-  fileRowDelete: { backgroundColor: "rgba(255,241,240,0.5)" },
+  fileRowDelete: { backgroundColor: colors.destructiveSoft },
   fileIconBox: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   fileName: { ...typography.bodyMd, color: colors.textPrimary, fontWeight: "600" },
   fileMeta: { ...typography.mono, marginTop: 2 },
   keepBadge: { backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   keepBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
 
-  stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: 12, backgroundColor: "rgba(250,250,250,0.98)", borderTopWidth: 1, borderTopColor: colors.border },
+  stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: 12, backgroundColor: colors.background + "EE", borderTopWidth: 1, borderTopColor: colors.border },
   deleteBtn: { backgroundColor: colors.destructive, borderRadius: radius.button, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, ...shadow.destructive },
   deleteBtnText: { color: "#fff", fontWeight: "800", fontSize: 14 },
 });

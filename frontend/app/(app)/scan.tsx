@@ -398,8 +398,8 @@ export default function Scan() {
 
             {Platform.OS === "android" && (
               <TouchableOpacity testID="btn-scan-folder" style={[styles.bigBtn, shadow.card]} onPress={scanFolderAndroid}>
-                <View style={[styles.bigIcon, { backgroundColor: "#FFF9EC" }]}>
-                  <Ionicons name="folder-open-outline" size={26} color={colors.ai} />
+              <View style={[styles.bigIcon, { backgroundColor: colors.aiSoft }]}>
+                <Ionicons name="folder-open-outline" size={26} color={colors.ai} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bigTitle}>Scan a folder</Text>
@@ -412,7 +412,7 @@ export default function Scan() {
             )}
 
             <TouchableOpacity testID="btn-scan-internal" style={[styles.bigBtn, shadow.card]} onPress={pickDocuments}>
-              <View style={[styles.bigIcon, { backgroundColor: "#EEF2FF" }]}>
+              <View style={[styles.bigIcon, { backgroundColor: colors.surfaceElevated }]}>
                 <Ionicons name="document-attach-outline" size={26} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
@@ -423,7 +423,7 @@ export default function Scan() {
             </TouchableOpacity>
 
             <TouchableOpacity testID="btn-scan-remote" style={[styles.bigBtn, shadow.card]} onPress={scanRemote}>
-              <View style={[styles.bigIcon, { backgroundColor: "#E8F0FE" }]}>
+              <View style={[styles.bigIcon, { backgroundColor: colors.surfaceElevated }]}>
                 <Ionicons name="cloud-outline" size={26} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
@@ -497,30 +497,30 @@ const styles = StyleSheet.create({
   heroLabel: { ...typography.label, marginTop: spacing.lg, alignSelf: "flex-start" },
   hero: { fontSize: 32, fontWeight: "900", letterSpacing: -0.8, lineHeight: 38, color: colors.textPrimary, marginVertical: spacing.md, alignSelf: "flex-start" },
 
-  bigBtn: { width: "100%", flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(0,0,0,0.04)", marginBottom: spacing.md },
+  bigBtn: { width: "100%", flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md },
   bigBtnPrimary: { backgroundColor: colors.primary, borderColor: "transparent" },
   bigIcon: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   bigTitle: { ...typography.h3, fontSize: 17 },
   bigBody: { ...typography.bodySm, color: colors.textSecondary },
 
-  infoCard: { flexDirection: "row", gap: spacing.sm, backgroundColor: "#EEF2FF", padding: spacing.md, borderRadius: 16, marginTop: spacing.md, alignItems: "flex-start" },
-  infoText: { ...typography.bodySm, color: "#1E3A8A", flex: 1, lineHeight: 18 },
-  androidBadge: { backgroundColor: "#0A0A0A", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  androidBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  infoCard: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceElevated, padding: spacing.md, borderRadius: 16, marginTop: spacing.md, alignItems: "flex-start", borderWidth: 1, borderColor: colors.border },
+  infoText: { ...typography.bodySm, color: colors.textSecondary, flex: 1, lineHeight: 18 },
+  androidBadge: { backgroundColor: colors.surfaceElevated, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: colors.border },
+  androidBadgeText: { color: colors.cyan, fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
 
   progressBox: { width: "100%", alignItems: "center", marginTop: spacing.xxl },
   progressRing: { width: 200, height: 200, borderRadius: 100, borderWidth: 8, borderColor: colors.primary, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   progressPct: { fontSize: 56, fontWeight: "900", color: colors.primary, letterSpacing: -2 },
   progressLabel: { ...typography.bodySm, color: colors.textSecondary, marginTop: 4 },
-  logLine: { ...typography.mono, color: "#999", textAlign: "left" },
-  cancelBtn: { marginTop: spacing.lg, paddingVertical: 12, paddingHorizontal: 24, borderRadius: radius.button, backgroundColor: colors.surfaceHover },
+  logLine: { ...typography.mono, color: colors.textMuted, textAlign: "left" },
+  cancelBtn: { marginTop: spacing.lg, paddingVertical: 12, paddingHorizontal: 24, borderRadius: radius.button, backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
   cancelText: { color: colors.textPrimary, fontWeight: "700" },
 
-  resultBox: { width: "100%", alignItems: "center", padding: spacing.xl, marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.card },
+  resultBox: { width: "100%", alignItems: "center", padding: spacing.xl, marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.card, borderWidth: 1, borderColor: colors.border },
   resultTitle: { ...typography.h2, marginTop: spacing.md },
   resultStat: { ...typography.body, color: colors.textSecondary, marginTop: 2 },
   primaryBtn: { backgroundColor: colors.primary, borderRadius: radius.button, paddingVertical: 16, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
   primaryText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  secondaryBtn: { backgroundColor: colors.surfaceHover, borderRadius: radius.button, paddingVertical: 16, alignItems: "center" },
+  secondaryBtn: { backgroundColor: colors.surfaceElevated, borderRadius: radius.button, paddingVertical: 16, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   secondaryText: { color: colors.textPrimary, fontWeight: "700", fontSize: 15 },
 });

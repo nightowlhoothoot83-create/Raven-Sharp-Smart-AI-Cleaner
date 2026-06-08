@@ -96,7 +96,7 @@ export default function Sources() {
         <Text style={[typography.label, { marginTop: spacing.lg }]}>ADD A NEW SOURCE</Text>
 
         <TouchableOpacity testID="btn-add-gdrive" style={[styles.addCard, shadow.card]} onPress={() => setShowAdd("gdrive")}>
-          <View style={[styles.iconWrap, { backgroundColor: "#E8F0FE" }]}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.surfaceElevated }]}>
             <Ionicons name="logo-google" size={20} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
@@ -107,7 +107,7 @@ export default function Sources() {
         </TouchableOpacity>
 
         <TouchableOpacity testID="btn-add-dropbox" style={[styles.addCard, shadow.card]} onPress={() => setShowAdd("dropbox")}>
-          <View style={[styles.iconWrap, { backgroundColor: "#E3F2FD" }]}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.surfaceElevated }]}>
             <Ionicons name="logo-dropbox" size={20} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
@@ -147,7 +147,7 @@ export default function Sources() {
                 value={label}
                 onChangeText={setLabel}
                 placeholder={showAdd === "gdrive" ? "Personal Drive" : "Work Dropbox"}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={colors.textMuted}
               />
               <Text style={typography.label}>ACCESS TOKEN</Text>
               <TextInput
@@ -156,7 +156,7 @@ export default function Sources() {
                 value={token}
                 onChangeText={setToken}
                 placeholder="Paste token here"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={colors.textMuted}
                 multiline
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -184,23 +184,23 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
   headerTitle: { ...typography.h3, color: colors.textPrimary },
 
-  emptyCard: { backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, alignItems: "center", borderWidth: 1, borderColor: "rgba(0,0,0,0.04)" },
-  sourceCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: "rgba(0,0,0,0.04)" },
-  addCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: "rgba(0,0,0,0.04)" },
+  emptyCard: { backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, alignItems: "center", borderWidth: 1, borderColor: colors.border },
+  sourceCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  addCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   sourceTitle: { ...typography.h3, fontSize: 16 },
   sourceMeta: { ...typography.bodySm, color: colors.textSecondary },
-  disconnectBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#FFF1F0", alignItems: "center", justifyContent: "center" },
+  disconnectBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.destructiveSoft, alignItems: "center", justifyContent: "center" },
 
-  infoCard: { flexDirection: "row", gap: spacing.sm, backgroundColor: "#EEF2FF", padding: spacing.md, borderRadius: 16, marginTop: spacing.md },
-  infoText: { ...typography.bodySm, color: "#1E3A8A", flex: 1, lineHeight: 18 },
+  infoCard: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceElevated, padding: spacing.md, borderRadius: 16, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
+  infoText: { ...typography.bodySm, color: colors.textSecondary, flex: 1, lineHeight: 18 },
 
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, padding: spacing.lg, gap: 8 },
-  handle: { width: 40, height: 4, backgroundColor: "#E5E5E5", borderRadius: 2, alignSelf: "center", marginBottom: spacing.md },
-  input: { backgroundColor: colors.surfaceHover, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: colors.textPrimary, marginTop: 6, marginBottom: spacing.sm },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, padding: spacing.lg, gap: 8, borderTopWidth: 1, borderTopColor: colors.border },
+  handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: "center", marginBottom: spacing.md },
+  input: { backgroundColor: colors.surfaceElevated, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: colors.textPrimary, marginTop: 6, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   primaryBtn: { backgroundColor: colors.primary, borderRadius: radius.button, paddingVertical: 14, alignItems: "center" },
   primaryText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  secondaryBtn: { backgroundColor: colors.surfaceHover, borderRadius: radius.button, paddingVertical: 14, alignItems: "center" },
+  secondaryBtn: { backgroundColor: colors.surfaceElevated, borderRadius: radius.button, paddingVertical: 14, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   secondaryText: { color: colors.textPrimary, fontWeight: "700", fontSize: 15 },
 });

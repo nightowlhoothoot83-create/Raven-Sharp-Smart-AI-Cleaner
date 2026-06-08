@@ -82,7 +82,7 @@ export default function Rename() {
           {items.map((item) => (
             <View key={item.id} style={styles.card} testID={`rename-card-${item.id}`}>
               <View style={styles.cardHeader}>
-                <Ionicons name="sparkles" size={16} color={colors.ai} />
+                <Ionicons name="sparkles" size={16} color={colors.violetSoft} />
                 <Text style={styles.cardHeaderText}>AI SUGGESTION</Text>
               </View>
               <View style={styles.namePair}>
@@ -91,7 +91,7 @@ export default function Rename() {
               </View>
               <View style={styles.divider} />
               <View style={styles.namePair}>
-                <Text style={[styles.fromLabel, { color: colors.ai }]}>Suggested</Text>
+                <Text style={[styles.fromLabel, { color: colors.violetSoft }]}>Suggested</Text>
                 <Text style={styles.toName} numberOfLines={2}>{item.ai_suggested_name}</Text>
               </View>
 
@@ -159,27 +159,27 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.xl },
   emptyImg: { width: 220, height: 220 },
 
-  card: { backgroundColor: colors.amberBg, borderRadius: radius.card, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(255,159,10,0.3)", marginBottom: spacing.md, ...shadow.card },
+  card: { backgroundColor: colors.aiSoft, borderRadius: radius.card, padding: spacing.lg, borderWidth: 1, borderColor: colors.violet + "55", marginBottom: spacing.md, ...shadow.card },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: spacing.md },
-  cardHeaderText: { ...typography.label, color: colors.ai },
+  cardHeaderText: { ...typography.label, color: colors.violetSoft },
   namePair: { gap: 4 },
-  fromLabel: { ...typography.label, color: colors.textSecondary, fontSize: 10 },
+  fromLabel: { ...typography.label, color: colors.textMuted, fontSize: 10 },
   fromName: { ...typography.bodyMd, color: colors.textSecondary, textDecorationLine: "line-through" },
-  toName: { fontSize: 18, fontWeight: "800", color: colors.ai, letterSpacing: -0.3 },
-  divider: { height: 1, backgroundColor: "rgba(0,0,0,0.06)", marginVertical: spacing.md },
-  preview: { ...typography.mono, marginTop: spacing.md, color: "#999" },
+  toName: { fontSize: 18, fontWeight: "800", color: colors.violetSoft, letterSpacing: -0.3 },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  preview: { ...typography.mono, marginTop: spacing.md, color: colors.textMuted },
 
   btnRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   rejectBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
   editBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 48, borderRadius: radius.button, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   editText: { color: colors.textPrimary, fontWeight: "700" },
-  approveBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 48, borderRadius: radius.button, backgroundColor: colors.ai },
+  approveBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 48, borderRadius: radius.button, backgroundColor: colors.violet },
   approveText: { color: "#fff", fontWeight: "800" },
 
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, padding: spacing.lg, gap: 8 },
-  handle: { width: 40, height: 4, backgroundColor: "#E5E5E5", borderRadius: 2, alignSelf: "center", marginBottom: spacing.md },
-  input: { backgroundColor: colors.surfaceHover, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, color: colors.textPrimary, marginTop: 6 },
-  cancelBtn: { backgroundColor: colors.surfaceHover, borderRadius: radius.button, paddingVertical: 14, alignItems: "center" },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, padding: spacing.lg, gap: 8, borderTopWidth: 1, borderTopColor: colors.border },
+  handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: "center", marginBottom: spacing.md },
+  input: { backgroundColor: colors.surfaceElevated, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, color: colors.textPrimary, marginTop: 6, borderWidth: 1, borderColor: colors.border },
+  cancelBtn: { backgroundColor: colors.surfaceElevated, borderRadius: radius.button, paddingVertical: 14, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   cancelText: { color: colors.textPrimary, fontWeight: "700" },
 });
