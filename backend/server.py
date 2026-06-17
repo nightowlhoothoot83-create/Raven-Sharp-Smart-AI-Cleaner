@@ -233,6 +233,59 @@ async def ai_suggest_filename(name: str, text_preview: str, mime: str) -> Option
         return None
 
 
+def text_shingles(text: str, k: int = 5) -> set:
+    """Generate k-word shingles from normalized text for content-similarity clustering."""
+    if not text or len(text) < 20:
+        return set()
+    words = re.findall(r'\w+', text.lower())
+    if len(words) < k:
+        return set()
+    return {' '.join(words[i:i + k]) for i in range(len(words) - k + 1)}
+
+
+def jaccard(a: set, b: set) -> float:
+    """Jaccard similarity between two shingle sets."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def cluster_by_content(files: List[dict], threshold: float = 0.35) -> List[List[dict]]:
+    """Cluster files whose text content overlaps (Jaccard >= threshold).
+    Uses union-find on the similarity graph."""
+    n = len(files)
+    if n < 2:
+        return []
+    shingles = [text_shingles(f.get("text_preview", "")) for f in files]
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(n):
+        if not shingles[i]:
+            continue
+        for j in range(i + 1, n):
+            if not shingles[j]:
+                continue
+            if jaccard(shingles[i], shingles[j]) >= threshold:
+                union(i, j)
+
+    groups: Dict[int, List[dict]] = {}
+    for i in range(n):
+        if shingles[i]:
+            groups.setdefault(find(i), []).append(files[i])
+    return [g for g in groups.values() if len(g) > 1]
+
+
 def filename_root(name: str) -> str:
     """Strip versioning/draft suffixes & extensions to get a 'root' for clustering near-duplicates.
     e.g. 'report-v2 (1).docx', 'report_draft.docx', 'report final.docx' -> 'report'."""
@@ -835,8 +888,34 @@ async def analyze(current: dict = Depends(get_current_user)):
             decision = {"keep_id": keep["id"], "reason": "Largest variant kept as most comprehensive."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
+        for f in g:
+            seen_in_group.add(f["id"])
         analyzed.append({
             "kind": "draft_cluster",
+            "files": g,
+            "keep_id": decision["keep_id"],
+            "reason": decision["reason"],
+            "space_recoverable": group_size,
+        })
+
+    # ----- Phase 3: content-based partial / draft detection -----
+    # For text-bearing files not yet clustered, find content-similar groups
+    # regardless of filename — catches drafts with different names.
+    remaining_text_files = [
+        f for f in files
+        if f["id"] not in seen_in_group
+        and f.get("text_preview")
+        and len(f.get("text_preview", "")) > 50
+    ]
+    content_clusters = cluster_by_content(remaining_text_files, threshold=0.35)
+    for g in content_clusters:
+        decision = await ai_pick_most_comprehensive(g)
+        group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
+        space_recoverable += group_size
+        for f in g:
+            seen_in_group.add(f["id"])
+        analyzed.append({
+            "kind": "partial_content",
             "files": g,
             "keep_id": decision["keep_id"],
             "reason": decision["reason"],

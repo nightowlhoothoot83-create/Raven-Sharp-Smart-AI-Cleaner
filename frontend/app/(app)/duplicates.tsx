@@ -124,7 +124,11 @@ export default function Duplicates() {
               <View key={gi} style={[styles.group, shadow.card]} testID={`duplicate-group-${gi}`}>
                 <View style={styles.groupHeader}>
                   <Text style={typography.label}>
-                    {g.kind === "draft_cluster" ? `DRAFT / PARTIAL CLUSTER` : `EXACT DUPLICATES`} · GROUP {gi + 1}
+                    {g.kind === "partial_content"
+                      ? "PARTIAL / DRAFT CONTENT"
+                      : g.kind === "draft_cluster"
+                        ? "FILENAME VARIANTS"
+                        : "EXACT DUPLICATES"} · GROUP {gi + 1}
                   </Text>
                   <Text style={[typography.bodySm, { color: colors.textSecondary }]}>{g.files.length} variants</Text>
                 </View>
