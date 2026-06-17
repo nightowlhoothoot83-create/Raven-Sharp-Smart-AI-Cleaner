@@ -123,8 +123,10 @@ export default function Duplicates() {
             {groups.map((g, gi) => (
               <View key={gi} style={[styles.group, shadow.card]} testID={`duplicate-group-${gi}`}>
                 <View style={styles.groupHeader}>
-                  <Text style={typography.label}>GROUP {gi + 1}</Text>
-                  <Text style={[typography.bodySm, { color: colors.textSecondary }]}>{g.files.length} copies</Text>
+                  <Text style={typography.label}>
+                    {g.kind === "draft_cluster" ? `DRAFT / PARTIAL CLUSTER` : `EXACT DUPLICATES`} · GROUP {gi + 1}
+                  </Text>
+                  <Text style={[typography.bodySm, { color: colors.textSecondary }]}>{g.files.length} variants</Text>
                 </View>
                 <View style={styles.reasonRow}>
                   <Ionicons name="sparkles" size={14} color={colors.ai} />

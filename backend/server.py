@@ -233,6 +233,36 @@ async def ai_suggest_filename(name: str, text_preview: str, mime: str) -> Option
         return None
 
 
+def filename_root(name: str) -> str:
+    """Strip versioning/draft suffixes & extensions to get a 'root' for clustering near-duplicates.
+    e.g. 'report-v2 (1).docx', 'report_draft.docx', 'report final.docx' -> 'report'."""
+    base = os.path.splitext(name)[0].lower().strip()
+    # Strip trailing patterns iteratively
+    patterns = [
+        r"\s*\(\d+\)$",            # " (1)"
+        r"[\s_\-]*copy(\s*\d*)?$",  # "_copy", "-copy 2"
+        r"[\s_\-]*v\d+$",           # "-v2"
+        r"[\s_\-]*version\s*\d+$",  # " version 3"
+        r"[\s_\-]*draft\d*$",       # "_draft", "draft2"
+        r"[\s_\-]*final\d*$",       # " final"
+        r"[\s_\-]*\d{4}[-_]\d{2}[-_]\d{2}$",  # date suffix
+        r"[\s_\-]*\d{1,2}$",        # trailing number
+        r"[\s_\-]*edited$",         # "edited"
+        r"[\s_\-]*unfinished$",
+        r"[\s_\-]*partial$",
+        r"[\s_\-]*wip$",
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for p in patterns:
+            new = re.sub(p, "", base, flags=re.IGNORECASE).strip()
+            if new and new != base:
+                base = new
+                changed = True
+    return base
+
+
 async def ai_pick_most_comprehensive(files: List[dict]) -> dict:
     """Given list of similar files, ask Claude which is most comprehensive."""
     if len(files) <= 1:
@@ -242,10 +272,13 @@ async def ai_pick_most_comprehensive(files: List[dict]) -> dict:
             api_key=EMERGENT_LLM_KEY,
             session_id=f"dedup-{uuid.uuid4()}",
             system_message=(
-                "You are a file deduplication assistant. Given several files with similar content, "
-                "identify which ONE has the MOST COMPREHENSIVE content (longest, most complete, most recent if tied). "
+                "You are a file deduplication assistant for RavenSharp by Ascension Digital. "
+                "Given several files that may be exact duplicates, drafts, partial/unfinished versions, "
+                "or revisions of the same underlying document, identify which ONE has the MOST COMPREHENSIVE "
+                "content — longest, most complete, most recent if tied. Watch out for: 'draft', 'v2', "
+                "'(1)', 'final', or shorter sizes indicating partial/unfinished versions. "
                 "Respond in this exact format on two lines:\n"
-                "KEEP: <file_id>\nREASON: <one-sentence reason>"
+                "KEEP: <file_id>\nREASON: <one-sentence reason mentioning if others are drafts/partial/identical>"
             ),
         ).with_model("anthropic", CLAUDE_MODEL)
 
@@ -734,22 +767,27 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
 # ----- Dedup + rename suggestions -----
 @api.post("/scan/analyze")
 async def analyze(current: dict = Depends(get_current_user)):
-    """Group duplicates by sha256, then for groups with size>1 ask AI which is most comprehensive."""
+    """Two-phase dedup:
+    1. Exact duplicates by sha256 → AI picks most comprehensive.
+    2. Near-duplicates / drafts: cluster by filename root + same extension.
+       AI confirms they're variants and picks the most comprehensive."""
     files = await files_col.find(
         {"user_id": current["id"]},
         {"_id": 0, "user_id": 0},
     ).to_list(5000)
 
-    # group by sha256
-    groups: Dict[str, List[dict]] = {}
-    for f in files:
-        groups.setdefault(f["sha256"], []).append(f)
+    seen_in_group: set = set()
 
-    dup_groups = [g for g in groups.values() if len(g) > 1]
+    # ----- Phase 1: exact hash duplicates -----
+    hash_groups: Dict[str, List[dict]] = {}
+    for f in files:
+        hash_groups.setdefault(f["sha256"], []).append(f)
+
     analyzed = []
     space_recoverable = 0
-    for g in dup_groups:
-        # for textual files use AI; for binary just pick most recent largest
+    for g in hash_groups.values():
+        if len(g) <= 1:
+            continue
         has_text = any(f.get("text_preview") for f in g)
         if has_text:
             decision = await ai_pick_most_comprehensive(g)
@@ -758,14 +796,53 @@ async def analyze(current: dict = Depends(get_current_user)):
             decision = {"keep_id": keep["id"], "reason": "Largest/most recent identical file kept."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
+        for f in g:
+            seen_in_group.add(f["id"])
         analyzed.append({
+            "kind": "exact_duplicate",
             "files": g,
             "keep_id": decision["keep_id"],
             "reason": decision["reason"],
             "space_recoverable": group_size,
         })
 
-    # Cache result
+    # ----- Phase 2: near-duplicates / drafts by filename root -----
+    # Only consider document-like files for draft clustering
+    doc_exts = {".pdf", ".docx", ".doc", ".txt", ".md", ".rtf", ".odt", ".pages"}
+    doc_files = [
+        f for f in files
+        if f["id"] not in seen_in_group
+        and os.path.splitext(f.get("name", ""))[1].lower() in doc_exts
+    ]
+    root_groups: Dict[str, List[dict]] = {}
+    for f in doc_files:
+        root = filename_root(f.get("name", ""))
+        if len(root) < 3:
+            continue  # too short to cluster meaningfully
+        ext = os.path.splitext(f.get("name", ""))[1].lower()
+        key = f"{root}|{ext}"
+        root_groups.setdefault(key, []).append(f)
+
+    for g in root_groups.values():
+        if len(g) <= 1:
+            continue
+        # Has text content? use AI; otherwise pick largest as most comprehensive
+        has_text = any(f.get("text_preview") for f in g)
+        if has_text:
+            decision = await ai_pick_most_comprehensive(g)
+        else:
+            keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+            decision = {"keep_id": keep["id"], "reason": "Largest variant kept as most comprehensive."}
+        group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
+        space_recoverable += group_size
+        analyzed.append({
+            "kind": "draft_cluster",
+            "files": g,
+            "keep_id": decision["keep_id"],
+            "reason": decision["reason"],
+            "space_recoverable": group_size,
+        })
+
     await db.scan_results.update_one(
         {"user_id": current["id"]},
         {"$set": {

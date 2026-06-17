@@ -297,6 +297,26 @@ export default function Scan() {
     }
   };
 
+  const scanDocuments = async () => {
+    if (Platform.OS === "android") {
+      // Android: full folder scan via SAF
+      return scanFolderAndroid();
+    }
+    // iOS/web: fall back to document picker (sandbox forbids folder access)
+    if (Platform.OS === "ios") {
+      Alert.alert(
+        "Pick documents to scan",
+        "Apple's sandbox blocks folder access. Pick the documents you want analysed — AI will then detect duplicates, drafts, and partial versions.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Pick documents", onPress: () => pickDocuments() },
+        ],
+      );
+      return;
+    }
+    return pickDocuments();
+  };
+
   const pickDocuments = async () => {
     try {
       const picked = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true, type: "*/*" });
@@ -402,8 +422,8 @@ export default function Scan() {
                 <Ionicons name="folder-open-outline" size={26} color={colors.ai} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.bigTitle}>Scan a folder</Text>
-                  <Text style={styles.bigBody}>Downloads, WhatsApp media, any folder</Text>
+                  <Text style={styles.bigTitle}>Scan any folder</Text>
+                  <Text style={styles.bigBody}>Downloads, WhatsApp media, anywhere on device</Text>
                 </View>
                 <View style={styles.androidBadge}>
                   <Text style={styles.androidBadgeText}>ANDROID</Text>
@@ -411,13 +431,13 @@ export default function Scan() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity testID="btn-scan-internal" style={[styles.bigBtn, shadow.card]} onPress={pickDocuments}>
+            <TouchableOpacity testID="btn-scan-internal" style={[styles.bigBtn, shadow.card]} onPress={scanDocuments}>
               <View style={[styles.bigIcon, { backgroundColor: colors.surfaceElevated }]}>
-                <Ionicons name="document-attach-outline" size={26} color={colors.primary} />
+                <Ionicons name="document-text-outline" size={26} color={colors.cyan} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.bigTitle}>Add documents</Text>
-                <Text style={styles.bigBody}>Pick PDFs, docs, or other files</Text>
+                <Text style={styles.bigTitle}>Scan documents</Text>
+                <Text style={styles.bigBody}>AI finds duplicates, drafts & partial documents</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
