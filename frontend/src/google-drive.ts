@@ -29,7 +29,6 @@ export function useGoogleDriveConnect(onSuccess?: () => void) {
       "https://www.googleapis.com/auth/drive",
     ],
     extraParams: {
-      access_type: "offline",
       prompt: "select_account consent",
     },
   });
