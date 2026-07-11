@@ -30,7 +30,7 @@ export function useGoogleDriveConnect(onSuccess?: () => void) {
     ],
     extraParams: {
       access_type: "offline",
-      prompt: "consent",
+      prompt: "select_account consent",
     },
   });
 
