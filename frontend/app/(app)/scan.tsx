@@ -8,7 +8,7 @@ import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Crypto from "expo-crypto";
 
-import { api } from "@/src/api";
+import { api, getToken } from "@/src/api";
 import { colors, typography, spacing, radius, images, shadow } from "@/src/theme";
 
 const BATCH_SIZE = 50;
@@ -88,7 +88,14 @@ export default function Scan() {
 
   const scanAllMedia = async () => {
     if (Platform.OS === "web") {
-      Alert.alert("Not available on web", "Full media library scan only works on iOS/Android. Try 'Pick documents' instead.");
+      Alert.alert(
+        "Scan folder instead",
+        "Web browsers can't access your phone's photo library directly. Use 'Scan documents' to pick a folder — the browser will let you select an entire folder including all photos inside.\n\nFor real photo-library scanning, open RavenSharp in Expo Go on your phone.",
+        [
+          { text: "OK", style: "cancel" },
+          { text: "Scan a folder", onPress: () => scanWebFolder() },
+        ],
+      );
       return;
     }
     const ok = await requestMediaPermission();
@@ -298,23 +305,93 @@ export default function Scan() {
   };
 
   const scanDocuments = async () => {
+    if (Platform.OS === "web") {
+      // Web: use a browser folder-picker <input webkitdirectory multiple>
+      return scanWebFolder();
+    }
     if (Platform.OS === "android") {
       // Android: full folder scan via SAF
       return scanFolderAndroid();
     }
-    // iOS/web: fall back to document picker (sandbox forbids folder access)
-    if (Platform.OS === "ios") {
-      Alert.alert(
-        "Pick documents to scan",
-        "Apple's sandbox blocks folder access. Pick the documents you want analysed — AI will then detect duplicates, drafts, and partial versions.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Pick documents", onPress: () => pickDocuments() },
-        ],
-      );
-      return;
-    }
-    return pickDocuments();
+    // iOS: fall back to document picker (sandbox forbids folder access)
+    Alert.alert(
+      "Pick documents to scan",
+      "Apple's sandbox blocks folder access. Pick the documents you want analysed — AI will then detect duplicates, drafts, and partial versions.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Pick documents", onPress: () => pickDocuments() },
+      ],
+    );
+  };
+
+  const scanWebFolder = async () => {
+    // Web-only: creates a hidden <input> with webkitdirectory to let user pick an entire folder.
+    // The browser walks the folder recursively and gives us all files.
+    if (typeof document === "undefined") return;
+    setLog([]);
+    const input = document.createElement("input") as HTMLInputElement;
+    input.type = "file";
+    // @ts-expect-error non-standard but widely supported browser API
+    input.webkitdirectory = true;
+    input.multiple = true;
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.onchange = async () => {
+      const files = Array.from(input.files || []);
+      document.body.removeChild(input);
+      if (files.length === 0) return;
+      setBusy(true);
+      cancelRef.current = false;
+      setProgress({ current: 0, total: files.length });
+      pushLog(`Picked ${files.length} files from folder`);
+
+      for (let i = 0; i < files.length; i++) {
+        if (cancelRef.current) break;
+        const f = files[i];
+        // Skip huge files (>25MB) to avoid backend rejection
+        if (f.size > 25 * 1024 * 1024) {
+          pushLog(`✗ ${f.name} (too large, skipped)`);
+          setProgress({ current: i + 1, total: files.length });
+          continue;
+        }
+        setProgress({ current: i, total: files.length, name: f.name });
+        try {
+          // Upload as multipart. Use FormData with the Blob.
+          const form = new FormData();
+          form.append("file", f, f.name);
+          const t = await getToken();
+          const res = await fetch(
+            `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/files/upload`,
+            {
+              method: "POST",
+              headers: t ? { Authorization: `Bearer ${t}` } : {},
+              body: form,
+            },
+          );
+          if (res.ok) {
+            pushLog(`✓ ${f.name}`);
+          } else {
+            pushLog(`✗ ${f.name} (${res.status})`);
+          }
+        } catch (e: any) {
+          pushLog(`✗ ${f.name} (${(e.message || "").slice(0, 30)})`);
+        }
+        setProgress({ current: i + 1, total: files.length });
+      }
+
+      pushLog("Running AI analysis...");
+      try {
+        const analyzed = await api.analyze();
+        setResult(analyzed);
+        pushLog(`Found ${analyzed.duplicate_groups_count} groups.`);
+      } catch (e: any) {
+        Alert.alert("Analysis failed", e.message || "Unknown error");
+      }
+      setBusy(false);
+    };
+
+    input.click();
   };
 
   const pickDocuments = async () => {
