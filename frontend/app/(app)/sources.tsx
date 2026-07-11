@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { api } from "@/src/api";
+import { useGoogleDriveConnect } from "@/src/google-drive";
 import { colors, typography, spacing, radius, shadow } from "@/src/theme";
 
 type SourceType = "gdrive" | "dropbox" | null;
@@ -30,6 +31,16 @@ export default function Sources() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const gdrive = useGoogleDriveConnect(load);
+
+  useFocusEffect(useCallback(() => {
+    if (gdrive.status === "success") {
+      Alert.alert("Google Drive linked", "Your Drive account was connected successfully.");
+    } else if (gdrive.status === "error" && gdrive.error) {
+      Alert.alert("Google Drive", gdrive.error);
+    }
+  }, [gdrive.status, gdrive.error]));
 
   const submit = async () => {
     setErr(null);
@@ -95,15 +106,28 @@ export default function Sources() {
 
         <Text style={[typography.label, { marginTop: spacing.lg }]}>ADD A NEW SOURCE</Text>
 
-        <TouchableOpacity testID="btn-add-gdrive" style={[styles.addCard, shadow.card]} onPress={() => setShowAdd("gdrive")}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.surfaceElevated }]}>
-            <Ionicons name="logo-google" size={20} color={colors.primary} />
+        <TouchableOpacity
+          testID="btn-signin-google"
+          style={[styles.googleBtn, shadow.card]}
+          onPress={gdrive.connect}
+          disabled={!gdrive.ready || gdrive.status === "authenticating" || gdrive.status === "linking"}
+        >
+          <View style={styles.googleIconWrap}>
+            <Ionicons name="logo-google" size={20} color="#4285F4" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sourceTitle}>Google Drive</Text>
-            <Text style={styles.sourceMeta}>Connect one or more accounts</Text>
+            <Text style={styles.googleBtnTitle}>Sign in with Google</Text>
+            <Text style={styles.googleBtnMeta}>
+              {gdrive.status === "authenticating" ? "Opening Google…" :
+               gdrive.status === "linking" ? "Linking your Drive…" :
+               "One tap. Multiple accounts supported."}
+            </Text>
           </View>
-          <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+          {gdrive.status === "authenticating" || gdrive.status === "linking" ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Ionicons name="arrow-forward" size={22} color="#fff" />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity testID="btn-add-dropbox" style={[styles.addCard, shadow.card]} onPress={() => setShowAdd("dropbox")}>
@@ -117,10 +141,16 @@ export default function Sources() {
           <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
         </TouchableOpacity>
 
+        <TouchableOpacity testID="btn-add-gdrive-manual" onPress={() => setShowAdd("gdrive")} style={{ marginTop: spacing.sm, alignSelf: "center" }}>
+          <Text style={{ color: colors.textMuted, fontSize: 12, textDecorationLine: "underline" }}>
+            Or paste a Drive access token (advanced)
+          </Text>
+        </TouchableOpacity>
+
         <View style={[styles.infoCard]}>
-          <Ionicons name="information-circle" size={18} color={colors.primary} />
+          <Ionicons name="shield-checkmark" size={18} color={colors.cyan} />
           <Text style={styles.infoText}>
-            Google Drive: get a token at https://developers.google.com/oauthplayground (scope: drive). Dropbox: generate from your Dropbox App Console.
+            RavenSharp uses Google's official sign-in — we never see your password. You can link multiple Drive accounts and revoke access anytime from your Google account settings.
           </Text>
         </View>
       </ScrollView>
@@ -185,6 +215,21 @@ const styles = StyleSheet.create({
   headerTitle: { ...typography.h3, color: colors.textPrimary },
 
   emptyCard: { backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.lg, alignItems: "center", borderWidth: 1, borderColor: colors.border },
+
+  googleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  googleIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+  googleBtnTitle: { fontSize: 16, fontWeight: "800", color: "#fff", letterSpacing: -0.2 },
+  googleBtnMeta: { fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 },
+
   sourceCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   addCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.card, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },

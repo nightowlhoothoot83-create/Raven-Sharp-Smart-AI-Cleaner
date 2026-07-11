@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Scan your photos to find duplicates",
         "NSPhotoLibraryAddUsageDescription": "Save cleaned-up photos back to your library"
-      }
+      },
+      "bundleIdentifier": "com.emergent.fileunifier.l1ct33"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +26,8 @@
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
         "READ_EXTERNAL_STORAGE"
-      ]
+      ],
+      "package": "com.emergent.fileunifier.l1ct33"
     },
     "web": {
       "bundler": "metro",
@@ -51,7 +53,8 @@
           "savePhotosPermission": "Save cleaned-up photos back to your library",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
