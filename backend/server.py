@@ -1,9 +1,9 @@
 """
 Smart File Scan & Dedup Backend
 - JWT Auth
-- Storage source connections (Internal device, Google Drive, Dropbox)
+- Storage source connections (Internal device, Google Drive, Dropbox, OneDrive)
 - File metadata storage + content hashing + text extraction
-- AI-powered duplicate detection (Claude Sonnet 4.5)
+- AI-powered duplicate detection (Claude, via direct Anthropic API)
 - AI-powered file rename suggestions
 - File deletion across sources
 """
@@ -27,18 +27,57 @@ from pydantic import BaseModel, EmailStr, Field
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-MONGO_URL = os.environ['MONGO_URL']
-DB_NAME = os.environ['DB_NAME']
-JWT_SECRET = os.environ['JWT_SECRET_KEY']
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("ravensharp-smartcleaner")
+
+# --- Self-healing startup config, matching every other RavenSharp backend ---
+# (This file previously used bare os.environ[...] for MONGO_URL/DB_NAME/
+# JWT_SECRET_KEY with zero error handling — a missing var crashed with a raw
+# KeyError and no indication of what to actually fix.)
+_startup_warnings = []
+
+MONGO_URL = os.environ.get("MONGO_URL")
+if not MONGO_URL:
+    logger.critical(
+        "STARTUP FAILURE: MONGO_URL is not set on this deployment. "
+        "The app cannot start without a database connection string. "
+        "Set MONGO_URL in Railway's environment variables for this service and redeploy."
+    )
+    raise RuntimeError("Missing required environment variable: MONGO_URL")
+
+DB_NAME = os.environ.get("DB_NAME")
+if not DB_NAME:
+    DB_NAME = "ravensharp_smartcleaner"
+    _startup_warnings.append(f"DB_NAME was not set — defaulting to '{DB_NAME}'.")
+
+JWT_SECRET = os.environ.get("JWT_SECRET_KEY")
+if not JWT_SECRET:
+    import secrets as _secrets
+    JWT_SECRET = _secrets.token_hex(32)
+    _startup_warnings.append(
+        "JWT_SECRET_KEY was not set — auto-generated a temporary one for this boot. "
+        "Existing user sessions will be invalidated on every restart until a permanent "
+        "JWT_SECRET_KEY is set in Railway's environment variables."
+    )
+
 JWT_ALG = os.environ.get('JWT_ALGORITHM', 'HS256')
 TOKEN_EXPIRE_MIN = int(os.environ.get('ACCESS_TOKEN_EXPIRE_MINUTES', '1440'))
-EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+
+# Replaces EMERGENT_LLM_KEY / emergentintegrations, which is tied to Emergent's
+# own platform and hard-crashed (raw os.environ[...]) outside it.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+if not ANTHROPIC_API_KEY:
+    _startup_warnings.append(
+        "ANTHROPIC_API_KEY was not set — AI rename suggestions and AI dedup picking will "
+        "fall back to non-AI defaults (largest-file-wins) instead of failing outright."
+    )
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+
+for _w in _startup_warnings:
+    logger.warning("STARTUP: %s", _w)
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -51,10 +90,6 @@ oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 app = FastAPI(title="Smart File Scan API")
 api = APIRouter(prefix="/api")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 
 # ---------- Models ----------
 class UserSignup(BaseModel):
@@ -88,6 +123,16 @@ class ConnectDrive(BaseModel):
 class ConnectDropbox(BaseModel):
     access_token: str
     account_label: str = "My Dropbox"
+
+
+class ConnectOneDrive(BaseModel):
+    access_token: str
+    account_label: str = "My OneDrive"
+
+
+class ConnectGPhotos(BaseModel):
+    access_token: str
+    account_label: str = "My Google Photos"
 
 
 class RenameApprove(BaseModel):
@@ -204,23 +249,46 @@ def sha256_bytes(data: bytes) -> str:
 
 
 # ---------- AI helpers ----------
+async def _call_claude(system_message: str, user_text: str, max_tokens: int = 300) -> str:
+    """Direct call to Anthropic's API — replaces Emergent's emergentintegrations
+    wrapper, which is tied to Emergent's own EMERGENT_LLM_KEY and hard-crashes
+    on startup outside their platform (os.environ['EMERGENT_LLM_KEY'] with no
+    default). This needs ANTHROPIC_API_KEY set on Railway instead."""
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY not configured")
+    async with httpx.AsyncClient(timeout=30) as client_http:
+        res = await client_http.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": max_tokens,
+                "system": system_message,
+                "messages": [{"role": "user", "content": user_text}],
+            },
+        )
+        if res.status_code != 200:
+            raise RuntimeError(f"Claude API error {res.status_code}: {res.text[:300]}")
+        data = res.json()
+        return "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
+
+
 async def ai_suggest_filename(name: str, text_preview: str, mime: str) -> Optional[str]:
     """Use Claude to suggest a meaningful filename."""
     if not text_preview and not mime.startswith("image/"):
         return None
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"rename-{uuid.uuid4()}",
-            system_message=(
-                "You are a file naming assistant. Given a file's current name, mime type and content preview, "
-                "suggest a concise descriptive filename (no extension, max 50 chars, kebab or snake case, "
-                "no special chars). Return ONLY the suggested filename, nothing else."
-            ),
-        ).with_model("anthropic", CLAUDE_MODEL)
-
+        system_message = (
+            "You are a file naming assistant. Given a file's current name, mime type and content preview, "
+            "suggest a concise descriptive filename (no extension, max 50 chars, kebab or snake case, "
+            "no special chars). Return ONLY the suggested filename, nothing else."
+        )
         prompt = f"Current name: {name}\nMime: {mime}\nContent preview:\n{text_preview[:2000] or '(no text content - likely an image)'}\n\nSuggest a better filename:"
-        resp = await chat.send_message(UserMessage(text=prompt))
+        resp = await _call_claude(system_message, prompt, max_tokens=60)
         suggestion = (resp or "").strip().split("\n")[0].strip()
         # sanitize
         suggestion = re.sub(r'[^A-Za-z0-9_\-]', '_', suggestion)[:50]
@@ -321,25 +389,20 @@ async def ai_pick_most_comprehensive(files: List[dict]) -> dict:
     if len(files) <= 1:
         return {"keep_id": files[0]["id"] if files else None, "reason": "single file"}
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"dedup-{uuid.uuid4()}",
-            system_message=(
-                "You are a file deduplication assistant for RavenSharp by Ascension Digital. "
-                "Given several files that may be exact duplicates, drafts, partial/unfinished versions, "
-                "or revisions of the same underlying document, identify which ONE has the MOST COMPREHENSIVE "
-                "content — longest, most complete, most recent if tied. Watch out for: 'draft', 'v2', "
-                "'(1)', 'final', or shorter sizes indicating partial/unfinished versions. "
-                "Respond in this exact format on two lines:\n"
-                "KEEP: <file_id>\nREASON: <one-sentence reason mentioning if others are drafts/partial/identical>"
-            ),
-        ).with_model("anthropic", CLAUDE_MODEL)
-
+        system_message = (
+            "You are a file deduplication assistant for RavenSharp by Ascension Digital. "
+            "Given several files that may be exact duplicates, drafts, partial/unfinished versions, "
+            "or revisions of the same underlying document, identify which ONE has the MOST COMPREHENSIVE "
+            "content — longest, most complete, most recent if tied. Watch out for: 'draft', 'v2', "
+            "'(1)', 'final', or shorter sizes indicating partial/unfinished versions. "
+            "Respond in this exact format on two lines:\n"
+            "KEEP: <file_id>\nREASON: <one-sentence reason mentioning if others are drafts/partial/identical>"
+        )
         payload = "\n\n".join([
             f"FILE_ID: {f['id']}\nName: {f['name']}\nSize: {f['size']} bytes\nDate: {f.get('created_at','')}\nPreview:\n{(f.get('text_preview') or '')[:800]}"
             for f in files
         ])
-        resp = await chat.send_message(UserMessage(text=f"Files:\n{payload}\n\nWhich should we KEEP?"))
+        resp = await _call_claude(system_message, f"Files:\n{payload}\n\nWhich should we KEEP?", max_tokens=150)
         keep_id = None
         reason = ""
         for line in (resp or "").splitlines():
@@ -466,6 +529,107 @@ async def dropbox_rename(access_token: str, path: str, new_name: str) -> bool:
         return r.status_code == 200
 
 
+async def onedrive_list_files(access_token: str, page_size: int = 100) -> List[dict]:
+    """List files from OneDrive via Microsoft Graph API."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"$top": page_size, "$select": "id,name,file,size,createdDateTime"}
+    async with httpx.AsyncClient(timeout=30) as ac:
+        r = await ac.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root/children",
+            headers=headers, params=params,
+        )
+        if r.status_code != 200:
+            raise HTTPException(400, f"OneDrive API error: {r.text[:200]}")
+        # Filter out folders — only files have a "file" facet
+        return [f for f in r.json().get("value", []) if "file" in f]
+
+
+async def onedrive_download_sample(access_token: str, file_id: str, max_bytes: int = 200000) -> bytes:
+    headers = {"Authorization": f"Bearer {access_token}", "Range": f"bytes=0-{max_bytes-1}"}
+    async with httpx.AsyncClient(timeout=30) as ac:
+        r = await ac.get(
+            f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content",
+            headers=headers,
+        )
+        if r.status_code not in (200, 206):
+            raise HTTPException(400, f"OneDrive download error: {r.status_code}")
+        return r.content
+
+
+async def onedrive_delete(access_token: str, file_id: str) -> bool:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=15) as ac:
+        r = await ac.delete(f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}", headers=headers)
+        return r.status_code in (200, 204)
+
+
+async def onedrive_rename(access_token: str, file_id: str, new_name: str) -> bool:
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=15) as ac:
+        r = await ac.patch(
+            f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}",
+            headers=headers, json={"name": new_name},
+        )
+        return r.status_code == 200
+
+
+async def gphotos_list_files(access_token: str, page_size: int = 100) -> List[dict]:
+    """List media items from Google Photos via the Photos Library API.
+    NOTE: this needs the photoslibrary.readonly (or .appendonly / .sharing)
+    OAuth scope in addition to Drive's scope — a separate consent screen
+    permission from regular Drive access."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"pageSize": page_size}
+    async with httpx.AsyncClient(timeout=30) as ac:
+        r = await ac.get(
+            "https://photoslibrary.googleapis.com/v1/mediaItems",
+            headers=headers, params=params,
+        )
+        if r.status_code != 200:
+            raise HTTPException(400, f"Google Photos API error: {r.text[:200]}")
+        items = r.json().get("mediaItems", [])
+        # Normalize to the same shape used elsewhere (id/name/mimeType/size)
+        return [
+            {
+                "id": item["id"],
+                "name": item.get("filename", item["id"]),
+                "mimeType": item.get("mimeType", "image/jpeg"),
+                "size": None,  # Photos API doesn't expose file size directly
+                "createdTime": item.get("mediaMetadata", {}).get("creationTime"),
+                "_base_url": item.get("baseUrl"),
+            }
+            for item in items
+        ]
+
+
+async def gphotos_download_sample(access_token: str, media_item: dict, max_bytes: int = 200000) -> bytes:
+    """Google Photos requires appending a size/download parameter to the
+    item's baseUrl (which itself expires after ~60 minutes) rather than
+    hitting a stable per-item content endpoint like Drive/OneDrive."""
+    base_url = media_item.get("_base_url")
+    if not base_url:
+        raise HTTPException(400, "Google Photos media item missing baseUrl")
+    async with httpx.AsyncClient(timeout=30) as ac:
+        r = await ac.get(f"{base_url}=d")  # "=d" requests full download
+        if r.status_code != 200:
+            raise HTTPException(400, f"Google Photos download error: {r.status_code}")
+        return r.content[:max_bytes]
+
+
+async def gphotos_delete(access_token: str, media_item_id: str) -> bool:
+    """IMPORTANT: the Google Photos Library API has no delete/trash endpoint
+    for media items created outside your own app (i.e. photos the user took
+    with their camera, not uploaded through this app) — Google intentionally
+    restricts this to protect users' photo libraries. Deletion for
+    non-app-created items has to be done by the user in the Google Photos
+    app itself; this function will only work for items this app uploaded."""
+    logger.warning(
+        "gphotos_delete called — Google Photos API cannot delete items not "
+        "created by this app. This will likely fail for pre-existing photos."
+    )
+    return False
+
+
 # ---------- Routes ----------
 @api.get("/")
 async def root():
@@ -555,6 +719,44 @@ async def connect_dropbox(body: ConnectDropbox, current: dict = Depends(get_curr
     }
     await sources_col.insert_one(doc)
     return {"id": sid, "type": "dropbox", "label": body.account_label}
+
+
+@api.post("/sources/onedrive")
+async def connect_onedrive(body: ConnectOneDrive, current: dict = Depends(get_current_user)):
+    try:
+        await onedrive_list_files(body.access_token, page_size=1)
+    except HTTPException as e:
+        raise e
+    sid = str(uuid.uuid4())
+    doc = {
+        "id": sid,
+        "user_id": current["id"],
+        "type": "onedrive",
+        "label": body.account_label,
+        "access_token": body.access_token,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await sources_col.insert_one(doc)
+    return {"id": sid, "type": "onedrive", "label": body.account_label}
+
+
+@api.post("/sources/gphotos")
+async def connect_gphotos(body: ConnectGPhotos, current: dict = Depends(get_current_user)):
+    try:
+        await gphotos_list_files(body.access_token, page_size=1)
+    except HTTPException as e:
+        raise e
+    sid = str(uuid.uuid4())
+    doc = {
+        "id": sid,
+        "user_id": current["id"],
+        "type": "gphotos",
+        "label": body.account_label,
+        "access_token": body.access_token,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await sources_col.insert_one(doc)
+    return {"id": sid, "type": "gphotos", "label": body.account_label}
 
 
 @api.delete("/sources/{source_id}")
@@ -664,7 +866,7 @@ async def delete_file(file_id: str, current: dict = Depends(get_current_user)):
         raise HTTPException(404, "File not found")
 
     # If external source, delete remotely
-    if rec["source"] in ("gdrive", "dropbox") and rec.get("source_id"):
+    if rec["source"] in ("gdrive", "dropbox", "onedrive", "gphotos") and rec.get("source_id"):
         src = await sources_col.find_one({"id": rec["source_id"], "user_id": current["id"]})
         if src:
             try:
@@ -672,6 +874,17 @@ async def delete_file(file_id: str, current: dict = Depends(get_current_user)):
                     await drive_delete(src["access_token"], rec["external_id"])
                 elif rec["source"] == "dropbox":
                     await dropbox_delete(src["access_token"], rec["external_id"])
+                elif rec["source"] == "onedrive":
+                    await onedrive_delete(src["access_token"], rec["external_id"])
+                elif rec["source"] == "gphotos":
+                    # Will return False — Google Photos API can't delete
+                    # items this app didn't create. See gphotos_delete()'s
+                    # docstring. We still remove it from OUR records below
+                    # so it stops showing as a duplicate here, even though
+                    # it isn't actually deleted from the user's Photos library.
+                    deleted = await gphotos_delete(src["access_token"], rec["external_id"])
+                    if not deleted:
+                        logger.info(f"gphotos_delete returned False for {rec['external_id']} (expected — see docstring)")
             except Exception as e:
                 logger.warning(f"Remote delete failed: {e}")
     await files_col.delete_one({"id": file_id, "user_id": current["id"]})
@@ -687,7 +900,7 @@ async def rename_file(file_id: str, body: RenameApprove, current: dict = Depends
     if not new_name:
         raise HTTPException(400, "Name cannot be empty")
 
-    if rec["source"] in ("gdrive", "dropbox") and rec.get("source_id"):
+    if rec["source"] in ("gdrive", "dropbox", "onedrive") and rec.get("source_id"):
         src = await sources_col.find_one({"id": rec["source_id"], "user_id": current["id"]})
         if src:
             try:
@@ -695,6 +908,8 @@ async def rename_file(file_id: str, body: RenameApprove, current: dict = Depends
                     await drive_rename(src["access_token"], rec["external_id"], new_name)
                 elif rec["source"] == "dropbox":
                     await dropbox_rename(src["access_token"], rec["external_id"], new_name)
+                elif rec["source"] == "onedrive":
+                    await onedrive_rename(src["access_token"], rec["external_id"], new_name)
             except Exception as e:
                 logger.warning(f"Remote rename failed: {e}")
     await files_col.update_one(
