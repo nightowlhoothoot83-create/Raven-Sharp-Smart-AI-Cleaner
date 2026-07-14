@@ -142,12 +142,13 @@ class RenameApprove(BaseModel):
 class FileRecord(BaseModel):
     id: str
     name: str
-    source: str  # internal | gdrive | dropbox
-    source_id: Optional[str] = None  # for gdrive/dropbox link
+    source: str  # internal | gdrive | dropbox | onedrive | gphotos
+    source_id: Optional[str] = None  # for gdrive/dropbox/onedrive/gphotos link
     external_id: Optional[str] = None  # file id in external source
     size: int = 0
     mime_type: str = ""
     sha256: str = ""
+    phash: Optional[str] = None  # perceptual hash, images only — see compute_image_phash()
     text_preview: str = ""
     is_generic_name: bool = False
     ai_suggested_name: Optional[str] = None
@@ -246,6 +247,33 @@ def extract_text_from_bytes(data: bytes, mime: str, name: str) -> str:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def compute_image_phash(data: bytes) -> Optional[str]:
+    """Perceptual hash (average hash) — lets us cluster visually similar
+    images (resized, recompressed, slightly cropped/re-edited) even when
+    they're NOT byte-identical, unlike sha256 which only catches exact
+    duplicates. Returns a 64-char '0'/'1' string, or None if the image
+    can't be decoded (e.g. a partial/truncated download sample)."""
+    try:
+        from PIL import Image, ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True  # best-effort on partial samples
+        img = Image.open(io.BytesIO(data)).convert("L").resize((8, 8))
+        pixels = list(img.getdata())
+        avg = sum(pixels) / len(pixels)
+        return "".join("1" if p >= avg else "0" for p in pixels)
+    except Exception as e:
+        logger.info(f"phash computation skipped (not a decodable image or truncated sample): {e}")
+        return None
+
+
+def phash_hamming_distance(hash_a: str, hash_b: str) -> int:
+    """Lower = more visually similar. 0 = identical hash. For a 64-bit hash,
+    a distance of ~10 or less is a reasonable 'probably the same photo'
+    threshold — tune based on real-world results once this is live."""
+    if not hash_a or not hash_b or len(hash_a) != len(hash_b):
+        return 64  # max distance — treat as "not similar" if unusable
+    return sum(a != b for a, b in zip(hash_a, hash_b))
 
 
 # ---------- AI helpers ----------
@@ -350,6 +378,44 @@ def cluster_by_content(files: List[dict], threshold: float = 0.35) -> List[List[
     groups: Dict[int, List[dict]] = {}
     for i in range(n):
         if shingles[i]:
+            groups.setdefault(find(i), []).append(files[i])
+    return [g for g in groups.values() if len(g) > 1]
+
+
+def cluster_by_image_similarity(files: List[dict], max_distance: int = 10) -> List[List[dict]]:
+    """Cluster visually-similar images (resized, recompressed, lightly
+    edited/cropped) using perceptual-hash Hamming distance, regardless of
+    filename — mirrors cluster_by_content()'s approach for text files.
+    Uses union-find on the similarity graph, same as cluster_by_content."""
+    n = len(files)
+    if n < 2:
+        return []
+    hashes = [f.get("phash") for f in files]
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(n):
+        if not hashes[i]:
+            continue
+        for j in range(i + 1, n):
+            if not hashes[j]:
+                continue
+            if phash_hamming_distance(hashes[i], hashes[j]) <= max_distance:
+                union(i, j)
+
+    groups: Dict[int, List[dict]] = {}
+    for i in range(n):
+        if hashes[i]:
             groups.setdefault(find(i), []).append(files[i])
     return [g for g in groups.values() if len(g) > 1]
 
@@ -781,6 +847,7 @@ async def upload_file(
     name = file.filename or "unnamed"
     mime = file.content_type or ""
     text = extract_text_from_bytes(data, mime, name)
+    phash = compute_image_phash(data) if mime.startswith("image/") else None
     fid = str(uuid.uuid4())
     rec = {
         "id": fid,
@@ -792,6 +859,7 @@ async def upload_file(
         "size": len(data),
         "mime_type": mime,
         "sha256": sha,
+        "phash": phash,
         "text_preview": text,
         "is_generic_name": is_generic_name(name),
         "ai_suggested_name": None,
@@ -944,6 +1012,7 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
         size = int(f.get("size", 0) or 0)
         sha = f.get("md5Checksum", "")  # Drive provides md5 for binary files
         text = ""
+        phash = None
         # download sample to compute sha256 + text for textual files
         if size and size < 5 * 1024 * 1024 and (mime.startswith("text/") or name.lower().endswith((".txt", ".md", ".pdf", ".docx", ".csv", ".json"))):
             try:
@@ -953,6 +1022,17 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
                     text = extract_text_from_bytes(data, mime, name)
             except Exception as e:
                 logger.warning(f"Drive sample download failed: {e}")
+        elif mime.startswith("image/") and size and size < 8 * 1024 * 1024:
+            # NOTE: this is a best-effort partial download (200KB) — enough to
+            # decode many JPEGs/PNGs for phash purposes, but not guaranteed
+            # for every image. A full-file download would be more reliable
+            # but costs more bandwidth per file across a large scan.
+            try:
+                data = await drive_download_sample(src["access_token"], external_id, max_bytes=200000)
+                if data:
+                    phash = compute_image_phash(data)
+            except Exception as e:
+                logger.warning(f"Drive image sample download failed: {e}")
         if not sha:
             # fallback: hash from metadata
             sha = hashlib.sha256(f"{name}-{size}-{external_id}".encode()).hexdigest()
@@ -966,6 +1046,7 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
             "size": size,
             "mime_type": mime,
             "sha256": sha,
+            "phash": phash,
             "text_preview": text,
             "is_generic_name": is_generic_name(name),
             "ai_suggested_name": None,
@@ -1001,8 +1082,10 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
         size = int(f.get("size", 0) or 0)
         sha = f.get("content_hash", "")  # dropbox-specific hash
         text = ""
+        phash = None
         mime = ""
-        if size and size < 5 * 1024 * 1024 and name.lower().endswith((".txt", ".md", ".pdf", ".docx", ".csv", ".json")):
+        name_lower = name.lower()
+        if size and size < 5 * 1024 * 1024 and name_lower.endswith((".txt", ".md", ".pdf", ".docx", ".csv", ".json")):
             try:
                 data = await dropbox_download_sample(src["access_token"], external_id, max_bytes=200000)
                 if data:
@@ -1010,6 +1093,17 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
                     text = extract_text_from_bytes(data, mime, name)
             except Exception as e:
                 logger.warning(f"Dropbox sample download failed: {e}")
+        elif size and size < 8 * 1024 * 1024 and name_lower.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic")):
+            # Dropbox's list API doesn't return a mime type, so this branches
+            # on extension instead. Same best-effort partial-download caveat
+            # as the Drive scan above — see that comment for details.
+            try:
+                data = await dropbox_download_sample(src["access_token"], external_id, max_bytes=200000)
+                if data:
+                    phash = compute_image_phash(data)
+                    mime = f"image/{name_lower.rsplit('.', 1)[-1].replace('jpg', 'jpeg')}"
+            except Exception as e:
+                logger.warning(f"Dropbox image sample download failed: {e}")
         if not sha:
             sha = hashlib.sha256(f"{name}-{size}-{external_id}".encode()).hexdigest()
         rec = {
@@ -1022,6 +1116,7 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
             "size": size,
             "mime_type": mime,
             "sha256": sha,
+            "phash": phash,
             "text_preview": text,
             "is_generic_name": is_generic_name(name),
             "ai_suggested_name": None,
@@ -1035,10 +1130,14 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
 # ----- Dedup + rename suggestions -----
 @api.post("/scan/analyze")
 async def analyze(current: dict = Depends(get_current_user)):
-    """Two-phase dedup:
+    """Four-phase dedup:
     1. Exact duplicates by sha256 → AI picks most comprehensive.
     2. Near-duplicates / drafts: cluster by filename root + same extension.
-       AI confirms they're variants and picks the most comprehensive."""
+       AI confirms they're variants and picks the most comprehensive.
+    3. Content-similar text files regardless of filename (shingle/Jaccard).
+       AI picks the most comprehensive.
+    4. Visually-similar images regardless of filename (perceptual hash) —
+       largest/most recent kept as the likely original/highest quality."""
     files = await files_col.find(
         {"user_id": current["id"]},
         {"_id": 0, "user_id": 0},
@@ -1134,6 +1233,28 @@ async def analyze(current: dict = Depends(get_current_user)):
             "files": g,
             "keep_id": decision["keep_id"],
             "reason": decision["reason"],
+            "space_recoverable": group_size,
+        })
+
+    # ----- Phase 4: visually-similar images (perceptual hash) -----
+    # Catches resized/recompressed/lightly-edited duplicate photos regardless
+    # of filename or exact byte match — mirrors phase 3's approach for text.
+    remaining_images = [
+        f for f in files
+        if f["id"] not in seen_in_group and f.get("phash")
+    ]
+    image_clusters = cluster_by_image_similarity(remaining_images, max_distance=10)
+    for g in image_clusters:
+        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        group_size = sum(f.get("size", 0) for f in g if f["id"] != keep["id"])
+        space_recoverable += group_size
+        for f in g:
+            seen_in_group.add(f["id"])
+        analyzed.append({
+            "kind": "similar_image",
+            "files": g,
+            "keep_id": keep["id"],
+            "reason": "Visually similar images detected (perceptual hash) — kept the largest/most recent as likely the original or highest quality.",
             "space_recoverable": group_size,
         })
 

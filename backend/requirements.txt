@@ -13,5 +13,6 @@ PyJWT==2.13.0
 httpx==0.28.1
 python-dotenv==1.2.2
 python-multipart==0.0.29
-boto3==1.43.17
-stripe==14.4.1
+pypdf==6.12.2
+python-docx==1.2.0
+Pillow==12.2.0
