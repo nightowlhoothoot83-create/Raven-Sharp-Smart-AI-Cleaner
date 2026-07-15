@@ -7,7 +7,7 @@ Smart File Scan & Dedup Backend
 - AI-powered file rename suggestions
 - File deletion across sources
 """
-from fastapi import FastAPI, APIRouter, HTTPException, status, Depends, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Request
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,6 +17,8 @@ import re
 import io
 import uuid
 import hashlib
+import hmac
+import json
 import logging
 import asyncio
 import httpx
@@ -75,6 +77,27 @@ if not ANTHROPIC_API_KEY:
         "fall back to non-AI defaults (largest-file-wins) instead of failing outright."
     )
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+
+OWNER_EMAIL = os.environ.get("OWNER_EMAIL", "ascensiondigitalagency@outlook.com")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+STRIPE_KEY = os.environ.get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+if STRIPE_KEY and not STRIPE_WEBHOOK_SECRET:
+    _startup_warnings.append(
+        "STRIPE_WEBHOOK_SECRET was not set — /billing/webhook will REJECT all events (fail-closed) "
+        "until this is set. Get it from Stripe Dashboard -> Developers -> Webhooks."
+    )
+# TODO: replace with the real Stripe Price ID once created
+STRIPE_PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "price_REPLACE_PRO")
+
+# Free tier: 1 storage source connected, 20 scans/month. Pro: unlimited
+# sources, unlimited scans. (First tier design for this app — adjust freely,
+# nothing else in the codebase assumes these specific numbers.)
+TIERS = {
+    "free": {"max_sources": 1, "scans_per_month": 20, "price": 0},
+    "pro":  {"max_sources": 999, "scans_per_month": 99999, "price": 9},
+    "owner": {"max_sources": 999, "scans_per_month": 99999, "price": 0},
+}
 
 for _w in _startup_warnings:
     logger.warning("STARTUP: %s", _w)
@@ -183,6 +206,9 @@ async def get_current_user(token: Annotated[str, Depends(oauth2)]) -> dict:
     user = await users_col.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
+    if user.get("email", "").lower() == OWNER_EMAIL.lower() and user.get("tier") != "owner":
+        await users_col.update_one({"id": uid}, {"$set": {"tier": "owner"}})
+        user["tier"] = "owner"
     return user
 
 
@@ -708,11 +734,17 @@ async def signup(payload: UserSignup):
     if existing:
         raise HTTPException(400, "Email already registered")
     uid = str(uuid.uuid4())
+    tier = "owner" if payload.email.lower() == OWNER_EMAIL.lower() else "free"
     user_doc = {
         "id": uid,
         "email": payload.email.lower(),
         "full_name": payload.full_name,
         "password_hash": hash_pw(payload.password),
+        "tier": tier,
+        "scans_this_month": 0,
+        "subscription_id": None,
+        "payment_failed_at": None,
+        "payment_failure_count": 0,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await users_col.insert_one(user_doc)
@@ -1334,6 +1366,94 @@ async def stats(current: dict = Depends(get_current_user)):
         "space_recoverable": (last_scan or {}).get("space_recoverable", 0),
         "last_scan_at": (last_scan or {}).get("analyzed_at"),
     }
+
+
+# ---------- Billing ----------
+class CheckoutIn(BaseModel):
+    tier: str = "pro"
+
+@api.post("/billing/checkout")
+async def create_checkout(payload: CheckoutIn, current: dict = Depends(get_current_user)):
+    if not STRIPE_KEY:
+        raise HTTPException(503, "Stripe is not configured.")
+    if payload.tier != "pro":
+        raise HTTPException(400, "Invalid tier")
+    async with httpx.AsyncClient(timeout=30) as c:
+        res = await c.post("https://api.stripe.com/v1/checkout/sessions",
+            headers={"Authorization": f"Bearer {STRIPE_KEY}"},
+            data={"mode": "subscription",
+                  "line_items[0][price]": STRIPE_PRO_PRICE_ID,
+                  "line_items[0][quantity]": "1",
+                  "success_url": f"{FRONTEND_URL}/account?session_id={{CHECKOUT_SESSION_ID}}",
+                  "cancel_url": f"{FRONTEND_URL}/pricing",
+                  "customer_email": current["email"],
+                  "metadata[user_id]": current["id"],
+                  "metadata[tier]": payload.tier})
+        if res.status_code != 200:
+            logger.error(f"Stripe checkout error: {res.text[:500]}")
+            raise HTTPException(500, "Unable to create checkout session.")
+        return {"checkout_url": res.json()["url"]}
+
+
+def verify_stripe_signature(payload: bytes, sig_header: str, secret: str, tolerance_sec: int = 300) -> bool:
+    """Same implementation as the other 5 RavenSharp apps.
+    https://docs.stripe.com/webhooks#verify-manually"""
+    if not sig_header or not secret:
+        return False
+    try:
+        parts = dict(item.split("=", 1) for item in sig_header.split(",") if "=" in item)
+        timestamp = parts.get("t")
+        v1 = parts.get("v1")
+        if not timestamp or not v1:
+            return False
+        if abs(datetime.now(timezone.utc).timestamp() - int(timestamp)) > tolerance_sec:
+            logger.warning("Stripe webhook rejected: timestamp outside tolerance (possible replay)")
+            return False
+        signed_payload = f"{timestamp}.".encode() + payload
+        expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, v1)
+    except Exception as e:
+        logger.warning(f"Stripe signature verification error: {e}")
+        return False
+
+
+@api.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    raw_body = await request.body()
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("Webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(503, "Webhook not configured — set STRIPE_WEBHOOK_SECRET")
+
+    sig_header = request.headers.get("stripe-signature", "")
+    if not verify_stripe_signature(raw_body, sig_header, STRIPE_WEBHOOK_SECRET):
+        logger.error("Webhook rejected: invalid or missing Stripe-Signature header")
+        raise HTTPException(400, "Invalid signature")
+
+    try:
+        event = json.loads(raw_body)
+        if event["type"] == "checkout.session.completed":
+            s = event["data"]["object"]
+            await users_col.update_one(
+                {"id": s["metadata"]["user_id"]},
+                {"$set": {"tier": s["metadata"]["tier"], "scans_this_month": 0,
+                          "subscription_id": s.get("subscription"),
+                          "payment_failed_at": None, "payment_failure_count": 0}})
+        elif event["type"] in ["customer.subscription.deleted", "customer.subscription.paused"]:
+            sub_id = event["data"]["object"]["id"]
+            await users_col.update_one({"subscription_id": sub_id}, {"$set": {"tier": "free"}})
+        elif event["type"] == "invoice.payment_failed":
+            invoice = event["data"]["object"]
+            sub_id = invoice.get("subscription")
+            if sub_id:
+                await users_col.update_one(
+                    {"subscription_id": sub_id},
+                    {"$set": {"payment_failed_at": datetime.now(timezone.utc).isoformat()},
+                     "$inc": {"payment_failure_count": 1}})
+                logger.warning(f"Payment failed for subscription {sub_id}")
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+    return {"ok": True}
 
 
 app.include_router(api)
