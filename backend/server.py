@@ -19,6 +19,7 @@ import uuid
 import hashlib
 import hmac
 import json
+import base64
 import logging
 import asyncio
 import httpx
@@ -331,18 +332,98 @@ async def _call_claude(system_message: str, user_text: str, max_tokens: int = 30
         return "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
 
 
-async def ai_suggest_filename(name: str, text_preview: str, mime: str) -> Optional[str]:
-    """Use Claude to suggest a meaningful filename."""
+async def _call_claude_vision(system_message: str, text_prompt: str, images: List[dict], max_tokens: int = 300) -> str:
+    """Same as _call_claude but attaches real image content — actual vision,
+    not a filename guess. `images` is a list of {"data": base64_str, "media_type": "image/png"}.
+    Claude supports multiple images in one message, so a whole similarity
+    cluster can be judged in a single call."""
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY not configured")
+    content = [{"type": "text", "text": text_prompt}]
+    for img in images:
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": img["media_type"], "data": img["data"]},
+        })
+    async with httpx.AsyncClient(timeout=60) as client_http:
+        res = await client_http.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": max_tokens,
+                "system": system_message,
+                "messages": [{"role": "user", "content": content}],
+            },
+        )
+        if res.status_code != 200:
+            raise RuntimeError(f"Claude Vision API error {res.status_code}: {res.text[:300]}")
+        data = res.json()
+        return "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
+
+
+async def _fetch_bytes_for_file(file_rec: dict, user_id: str) -> Optional[bytes]:
+    """Re-fetches actual bytes for a file that's already been scanned (only
+    metadata is persisted, not content). Works for gdrive/dropbox using the
+    stored access token. Returns None for internal-source files — those need
+    the phone itself to resend the bytes, since nothing server-side retains
+    them (see module-level note on this app's storage model)."""
+    source = file_rec.get("source")
+    if source not in ("gdrive", "dropbox") or not file_rec.get("source_id"):
+        return None
+    src = await sources_col.find_one({"id": file_rec["source_id"], "user_id": user_id})
+    if not src:
+        return None
+    try:
+        if source == "gdrive":
+            return await drive_download_sample(src["access_token"], file_rec["external_id"], max_bytes=5_000_000)
+        elif source == "dropbox":
+            return await dropbox_download_sample(src["access_token"], file_rec["external_id"], max_bytes=5_000_000)
+    except Exception as e:
+        logger.warning(f"Vision byte re-fetch failed for {file_rec.get('id')}: {e}")
+        return None
+
+
+async def ai_suggest_filename(name: str, text_preview: str, mime: str, image_b64: Optional[str] = None) -> Optional[str]:
+    """Use Claude to suggest a meaningful filename.
+    For images, this needs the ACTUAL image bytes (image_b64) to genuinely
+    look at the photo — without them, it falls back to guessing from the
+    old filename alone, which isn't real content understanding."""
     if not text_preview and not mime.startswith("image/"):
         return None
     try:
-        system_message = (
-            "You are a file naming assistant. Given a file's current name, mime type and content preview, "
-            "suggest a concise descriptive filename (no extension, max 50 chars, kebab or snake case, "
-            "no special chars). Return ONLY the suggested filename, nothing else."
-        )
-        prompt = f"Current name: {name}\nMime: {mime}\nContent preview:\n{text_preview[:2000] or '(no text content - likely an image)'}\n\nSuggest a better filename:"
-        resp = await _call_claude(system_message, prompt, max_tokens=60)
+        if mime.startswith("image/") and image_b64:
+            system_message = (
+                "You are a file naming assistant. Look at this image and suggest a concise, "
+                "descriptive filename based on what's actually in the photo (no extension, max 50 chars, "
+                "kebab or snake case, no special chars). Return ONLY the suggested filename, nothing else."
+            )
+            resp = await _call_claude_vision(
+                system_message,
+                f"Current filename: {name}\n\nSuggest a better filename based on this image's actual content:",
+                [{"data": image_b64, "media_type": mime}],
+                max_tokens=60,
+            )
+        else:
+            system_message = (
+                "You are a file naming assistant. Given a file's current name, mime type and content preview, "
+                "suggest a concise descriptive filename (no extension, max 50 chars, kebab or snake case, "
+                "no special chars). Return ONLY the suggested filename, nothing else."
+            )
+            if mime.startswith("image/") and not image_b64:
+                # No bytes available (internal-source file, already scanned,
+                # nothing persisted) — being honest in the prompt rather than
+                # pretending this is content-aware.
+                content_note = "(no image content available — suggest based on filename pattern only)"
+            else:
+                content_note = text_preview[:2000] or "(no text content extracted)"
+            prompt = f"Current name: {name}\nMime: {mime}\nContent preview:\n{content_note}\n\nSuggest a better filename:"
+            resp = await _call_claude(system_message, prompt, max_tokens=60)
+
         suggestion = (resp or "").strip().split("\n")[0].strip()
         # sanitize
         suggestion = re.sub(r'[^A-Za-z0-9_\-]', '_', suggestion)[:50]
@@ -1159,6 +1240,61 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
     return {"added": added, "total_listed": len(files)}
 
 
+async def ai_pick_most_comprehensive_image(files: List[dict], user_id: str) -> dict:
+    """Real vision-based judgment for a cluster of visually-similar images —
+    fetches actual bytes (gdrive/dropbox only, see _fetch_bytes_for_file) and
+    asks Claude to look at them and pick the best one: least cropped, best
+    resolution/quality, no watermark/overlay, etc. Falls back to the
+    largest/most-recent heuristic when no bytes can be fetched (all-internal
+    cluster, or ANTHROPIC_API_KEY not configured) rather than failing."""
+    if len(files) <= 1:
+        return {"keep_id": files[0]["id"] if files else None, "reason": "single file", "vision_used": False}
+
+    fetched = []
+    for f in files:
+        img_bytes = await _fetch_bytes_for_file(f, user_id)
+        if img_bytes:
+            fetched.append((f, base64.b64encode(img_bytes).decode(), f.get("mime_type", "image/jpeg")))
+
+    if len(fetched) < 2 or not ANTHROPIC_API_KEY:
+        keep = max(files, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        return {
+            "keep_id": keep["id"],
+            "reason": "Kept the largest/most recent — visual inspection wasn't available for this group (needs image bytes from a connected Drive/Dropbox source, and ANTHROPIC_API_KEY configured).",
+            "vision_used": False,
+        }
+
+    try:
+        labels = [f"IMAGE_{i+1} (file_id: {f['id']}, name: {f['name']})" for i, (f, _, _) in enumerate(fetched)]
+        system_message = (
+            "You are a photo deduplication assistant. You will see several images that are visually "
+            "similar or near-duplicate (same photo, possibly resized, recompressed, or lightly cropped). "
+            "Identify which ONE is the best version to KEEP — prefer higher resolution/sharper detail, "
+            "no unwanted cropping, no watermarks/overlays, better framing. "
+            "Respond in this exact format on two lines:\nKEEP: <file_id>\nREASON: <one sentence>"
+        )
+        prompt = "Images in order:\n" + "\n".join(labels) + "\n\nWhich should we KEEP?"
+        resp = await _call_claude_vision(
+            system_message, prompt,
+            [{"data": b64, "media_type": mime} for _, b64, mime in fetched],
+            max_tokens=150,
+        )
+        keep_id, reason = None, ""
+        for line in (resp or "").splitlines():
+            if line.upper().startswith("KEEP:"):
+                keep_id = line.split(":", 1)[1].strip()
+            if line.upper().startswith("REASON:"):
+                reason = line.split(":", 1)[1].strip()
+        if keep_id not in [f["id"] for f in files]:
+            keep = max(files, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+            return {"keep_id": keep["id"], "reason": reason or "Vision response unclear — kept largest as fallback.", "vision_used": True}
+        return {"keep_id": keep_id, "reason": reason or "AI selected best version by visual inspection.", "vision_used": True}
+    except Exception as e:
+        logger.warning(f"Image vision dedup failed: {e}")
+        keep = max(files, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        return {"keep_id": keep["id"], "reason": "Fallback: kept largest file (vision comparison failed).", "vision_used": False}
+
+
 # ----- Dedup + rename suggestions -----
 @api.post("/scan/analyze")
 async def analyze(current: dict = Depends(get_current_user)):
@@ -1277,16 +1413,18 @@ async def analyze(current: dict = Depends(get_current_user)):
     ]
     image_clusters = cluster_by_image_similarity(remaining_images, max_distance=10)
     for g in image_clusters:
-        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
-        group_size = sum(f.get("size", 0) for f in g if f["id"] != keep["id"])
+        decision = await ai_pick_most_comprehensive_image(g, current["id"])
+        keep_id = decision["keep_id"]
+        group_size = sum(f.get("size", 0) for f in g if f["id"] != keep_id)
         space_recoverable += group_size
         for f in g:
             seen_in_group.add(f["id"])
         analyzed.append({
             "kind": "similar_image",
             "files": g,
-            "keep_id": keep["id"],
-            "reason": "Visually similar images detected (perceptual hash) — kept the largest/most recent as likely the original or highest quality.",
+            "keep_id": keep_id,
+            "reason": decision["reason"],
+            "vision_used": decision["vision_used"],
             "space_recoverable": group_size,
         })
 
@@ -1325,7 +1463,13 @@ async def rename_candidates(current: dict = Depends(get_current_user)):
 
     async def process(f):
         async with sem:
-            suggestion = await ai_suggest_filename(f["name"], f.get("text_preview", ""), f.get("mime_type", ""))
+            image_b64 = None
+            mime = f.get("mime_type", "")
+            if mime.startswith("image/"):
+                img_bytes = await _fetch_bytes_for_file(f, current["id"])
+                if img_bytes:
+                    image_b64 = base64.b64encode(img_bytes).decode()
+            suggestion = await ai_suggest_filename(f["name"], f.get("text_preview", ""), mime, image_b64)
             if suggestion:
                 await files_col.update_one({"id": f["id"]}, {"$set": {"ai_suggested_name": suggestion}})
                 f["ai_suggested_name"] = suggestion
