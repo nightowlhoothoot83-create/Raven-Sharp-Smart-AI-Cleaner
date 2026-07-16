@@ -1,0 +1,54 @@
+name: Verify Railway deploy
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r backend/requirements.txt
+
+      - name: Compile backend
+        run: python -m py_compile backend/server.py
+
+      - name: Start backend and check health
+        env:
+          MONGO_URL: mongodb://127.0.0.1:27017
+          DB_NAME: ravensharp_smartcleaner_ci
+          JWT_SECRET_KEY: ci-only-secret
+          OWNER_EMAIL: ascensiondigitalagency@outlook.com
+        run: |
+          cd backend
+          uvicorn server:app --host 127.0.0.1 --port 8000 > /tmp/ai-cleaner.log 2>&1 &
+          APP_PID=$!
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/api/; then
+              kill "$APP_PID" || true
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/ai-cleaner.log
+          kill "$APP_PID" || true
+          exit 1
+
+      - name: Build production Docker image
+        run: docker build --tag raven-sharp-smart-ai-cleaner:test .
