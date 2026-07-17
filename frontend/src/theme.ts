@@ -12,8 +12,8 @@ export const colors = {
   borderSubtle: "#16162E",
 
   // Brand
-  primary: "#2F7FFF",             // electric blue (RavenSharp)
-  primaryGlow: "#4A9EFF",
+  primary: "#7c5cbf",             // Raven Sharp purple — matches Image Optimiser/POD/Book Creator/Content Creator/Ad Manager
+  primaryGlow: "#a78bfa",
   cyan: "#00D9FF",
   violet: "#7B3FF2",
   violetSoft: "#9D4EDD",
@@ -75,9 +75,9 @@ export const typography = {
 };
 
 export const brand = {
-  ravenSharpLogo: "https://customer-assets.emergentagent.com/job_file-unifier-8/artifacts/gr5as6qx_ravenSharpLogo.png",
-  ascensionLogo: "https://customer-assets.emergentagent.com/job_file-unifier-8/artifacts/hhf9rjxw_file_00000000154871f8b0ad91c463eb38d9.png",
-  portfolio: "https://customer-assets.emergentagent.com/job_file-unifier-8/artifacts/cjmcdzid_file_0000000060c87207adeb8b66396e89e6.png",
+  ravenSharpLogo: require("../assets/images/ravenSharpLogo.png"),  // now bundled locally — was pointing at Emergent's own asset CDN (customer-assets.emergentagent.com), a real reliability risk if that ever goes away
+  ascensionLogo: "https://customer-assets.emergentagent.com/job_file-unifier-8/artifacts/hhf9rjxw_file_00000000154871f8b0ad91c463eb38d9.png",  // TODO: same risk — bundle locally once you have this file
+  portfolio: "https://customer-assets.emergentagent.com/job_file-unifier-8/artifacts/cjmcdzid_file_0000000060c87207adeb8b66396e89e6.png",  // TODO: same risk — bundle locally once you have this file
   tagline: "Cyber Intelligence. Digital Protection.",
   group: "Part of the Ascension Digital Group",
   groupTagline: "One Vision. Endless Possibilities.",
@@ -121,7 +121,7 @@ export const shadow = {
     elevation: 4,
   },
   glow: {
-    shadowColor: "#2F7FFF",
+    shadowColor: "#7c5cbf",
     shadowOpacity: 0.4,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 20,

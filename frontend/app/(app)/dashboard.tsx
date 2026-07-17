@@ -61,7 +61,7 @@ export default function Dashboard() {
         {/* Branded header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            <Image source={{ uri: brand.ravenSharpLogo }} style={styles.headerLogo} resizeMode="contain" />
+            <Image source={brand.ravenSharpLogo} style={styles.headerLogo} resizeMode="contain" />
             <View>
               <Text style={styles.brandText}>RAVEN<Text style={{ color: colors.primary }}>SHARP</Text></Text>
               <Text style={styles.brandGroup}>{brand.group}</Text>

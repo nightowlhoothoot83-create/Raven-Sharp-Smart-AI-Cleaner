@@ -47,7 +47,7 @@ export default function Login() {
       >
         {/* Brand mark */}
         <View style={styles.brandWrap}>
-          <Image source={{ uri: brand.ravenSharpLogo }} style={styles.logo} resizeMode="contain" />
+          <Image source={brand.ravenSharpLogo} style={styles.logo} resizeMode="contain" />
           <Text style={styles.brandName}>RAVEN<Text style={{ color: colors.primary }}>SHARP</Text></Text>
           <Text style={styles.tagline}>{brand.tagline}</Text>
         </View>
