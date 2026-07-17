@@ -88,8 +88,6 @@ if STRIPE_KEY and not STRIPE_WEBHOOK_SECRET:
         "STRIPE_WEBHOOK_SECRET was not set — /billing/webhook will REJECT all events (fail-closed) "
         "until this is set. Get it from Stripe Dashboard -> Developers -> Webhooks."
     )
-# TODO: replace with the real Stripe Price ID once created
-STRIPE_PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "price_REPLACE_PRO")
 
 # Free tier: 1 storage source connected, 20 scans/month. Pro: unlimited
 # sources, unlimited scans. (First tier design for this app — adjust freely,
@@ -1526,7 +1524,10 @@ async def create_checkout(payload: CheckoutIn, current: dict = Depends(get_curre
         res = await c.post("https://api.stripe.com/v1/checkout/sessions",
             headers={"Authorization": f"Bearer {STRIPE_KEY}"},
             data={"mode": "subscription",
-                  "line_items[0][price]": STRIPE_PRO_PRICE_ID,
+                  "line_items[0][price_data][currency]": "aud",
+                  "line_items[0][price_data][product_data][name]": "Raven Sharp Smart Cleaner — Pro",
+                  "line_items[0][price_data][unit_amount]": str(TIERS["pro"]["price"] * 100),
+                  "line_items[0][price_data][recurring][interval]": "month",
                   "line_items[0][quantity]": "1",
                   "success_url": f"{FRONTEND_URL}/account?session_id={{CHECKOUT_SESSION_ID}}",
                   "cancel_url": f"{FRONTEND_URL}/pricing",
