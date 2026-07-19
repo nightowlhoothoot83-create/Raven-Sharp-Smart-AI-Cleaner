@@ -1601,6 +1601,10 @@ async def stripe_webhook(request: Request):
     return {"ok": True}
 
 
+@app.get("/health")
+async def health():
+    return {"ok": True, "service": "raven-sharp-smart-cleaner"}
+
 app.include_router(api)
 
 app.add_middleware(
