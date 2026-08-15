@@ -1610,7 +1610,13 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://cleaner.raven-sharp.com",
+        "https://raven-sharp-smart-ai-cleaner-production.up.railway.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"https://.*\.raven-sharp\.com",
     allow_methods=["*"],
     allow_headers=["*"],
 )
