@@ -1605,8 +1605,6 @@ async def stripe_webhook(request: Request):
 async def health():
     return {"ok": True, "service": "raven-sharp-smart-cleaner"}
 
-app.include_router(api)
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1620,6 +1618,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(api)
 
 
 @app.on_event("startup")
