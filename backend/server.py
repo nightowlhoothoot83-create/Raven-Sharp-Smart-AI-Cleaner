@@ -1649,7 +1649,7 @@ app.add_middleware(
 
 class ContentPreview(BaseModel):
     file_id: str = Field(min_length=1, max_length=100)
-    media_type: str = Field(max_length=50)
+    media_type: str = Field(max_length=100)
     data: str = Field(max_length=2800000)
 
 
