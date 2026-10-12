@@ -29,7 +29,12 @@ jobs:
       - name: Compile backend
         run: python -m py_compile backend/server.py
 
-      - name: Test matching order and content review\n        run: |\n          python tests/test_standard_matching_order.py\n          python tests/test_content_cleanup.py\n\n      - name: Start backend and check health
+      - name: Test matching order and content review
+        run: |
+          python tests/test_standard_matching_order.py
+          python tests/test_content_cleanup.py
+
+      - name: Start backend and check health
         env:
           MONGO_URL: mongodb://127.0.0.1:27017
           DB_NAME: ravensharp_smartcleaner_ci
