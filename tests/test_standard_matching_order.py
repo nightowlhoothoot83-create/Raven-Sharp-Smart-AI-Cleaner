@@ -3,6 +3,11 @@ import ast
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
+backend = Path(__file__).parent if (Path(__file__).parent / "server.py").exists() else Path(__file__).resolve().parents[1] / "backend"
+sys.path.insert(0, str(backend))
+from content_review import exact_fingerprint
+from pathlib import Path
 from types import SimpleNamespace
 
 class Cursor:
@@ -14,7 +19,7 @@ class MatchingOrderTests(unittest.IsolatedAsyncioTestCase):
         tree = ast.parse((Path(__file__).with_name('server.py') if Path(__file__).with_name('server.py').exists() else Path(__file__).resolve().parents[1] / 'backend' / 'server.py').read_text())
         function = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'analyze')
         function.decorator_list = []
-        function.args.defaults = []
+        function.args.defaults = [ast.Constant(None), ast.Constant(False)]
         async def update(*_args, **_kwargs): events.append('save')
         async def text_pick(group):
             self.assertIn('image_grouping', events)
@@ -33,7 +38,7 @@ class MatchingOrderTests(unittest.IsolatedAsyncioTestCase):
         import os
         scope = {'files_col': SimpleNamespace(find=lambda *_a, **_k: Cursor(files)),
             'db': SimpleNamespace(scan_results=SimpleNamespace(update_one=update)),
-            'datetime': datetime, 'timezone': timezone, 'filename_root': lambda name: name.split('_')[0], 'os': os,
+            'datetime': datetime, 'timezone': timezone, 'exact_fingerprint': exact_fingerprint, 'filename_root': lambda name: name.split('_')[0], 'os': os,
             'cluster_by_content': content_groups, 'cluster_by_image_similarity': image_groups,
             'ai_pick_most_comprehensive': text_pick, 'ai_pick_most_comprehensive_image': vision_pick}
         exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), 'handler', 'exec'), scope)
@@ -41,7 +46,7 @@ class MatchingOrderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_exact_fingerprints_do_not_call_claude_even_with_text(self):
         events = []
-        files = [{'id': str(i), 'sha256': 'identical', 'name': 'file.txt', 'size': 10, 'text_preview': 'text'} for i in range(2)]
+        files = [{'id': str(i), 'sha256': 'a'*64, 'source':'internal', 'name': 'file.txt', 'size': 10, 'text_preview': 'text'} for i in range(2)]
         result = await self.handler(files, events)({'id': 'user'})
         self.assertEqual(len(result['duplicate_groups']), 1)
         self.assertEqual(result['duplicate_groups'][0]['kind'], 'exact_duplicate')
@@ -66,8 +71,8 @@ class MatchingOrderTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_representative_can_be_compared_with_later_totalspan_version(self):
         events = []
         files = [
-            {'id': 'duplicate', 'sha256': 'same', 'name': 'totalspan_old.txt', 'size': 100, 'created_at': '2025', 'text_preview': 'old draft'},
-            {'id': 'old_rep', 'sha256': 'same', 'name': 'totalspan_old_copy.txt', 'size': 100, 'created_at': '2026', 'text_preview': 'old draft'},
+            {'id': 'duplicate', 'sha256': 'a'*64, 'source':'internal', 'name': 'totalspan_old.txt', 'size': 100, 'created_at': '2025', 'text_preview': 'old draft'},
+            {'id': 'old_rep', 'sha256': 'a'*64, 'source':'internal', 'name': 'totalspan_old_copy.txt', 'size': 100, 'created_at': '2026', 'text_preview': 'old draft'},
             {'id': 'complete', 'sha256': 'new', 'name': 'totalspan_final.txt', 'size': 200, 'text_preview': 'completed document'},
         ]
         result = await self.handler(files, events)({'id': 'user'})

@@ -27,6 +27,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Annotated, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
+from content_review import SYSTEM as REVIEW_SYSTEM, normalize_preview, parse_recommendations, safe_name, MAX_BATCH_BYTES, exact_fingerprint
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 
@@ -231,7 +232,7 @@ GENERIC_PATTERNS = [
 
 
 def is_generic_name(name: str) -> bool:
-    base = os.path.splitext(name)[0].strip()
+    base = os.path.splitext(os.path.basename(name.replace("\\", "/")))[0].strip()
     if len(base) < 4:
         return True
     for p in GENERIC_PATTERNS:
@@ -621,7 +622,7 @@ async def drive_download_sample(access_token: str, file_id: str, max_bytes: int 
 async def drive_delete(access_token: str, file_id: str) -> bool:
     headers = {"Authorization": f"Bearer {access_token}"}
     async with httpx.AsyncClient(timeout=15) as ac:
-        r = await ac.delete(f"https://www.googleapis.com/drive/v3/files/{file_id}", headers=headers)
+        r = await ac.patch(f"https://www.googleapis.com/drive/v3/files/{file_id}", headers=headers, json={"trashed": True})
         return r.status_code in (200, 204)
 
 
@@ -970,6 +971,7 @@ async def upload_file(
         "size": len(data),
         "mime_type": mime,
         "sha256": sha,
+        "fingerprint_kind": "sha256",
         "phash": phash,
         "text_preview": text,
         "is_generic_name": is_generic_name(name),
@@ -999,6 +1001,7 @@ async def register_files(body: FileRegisterBatch, current: dict = Depends(get_cu
     """Register device media (photos/videos) by metadata + hash only — no upload.
     Skips already-registered (same sha256 + external_id) records."""
     added = 0
+    records = []
     for item in body.items:
         # dedupe by (user, sha256, external_id) to avoid re-adding the same asset
         existing = await files_col.find_one({
@@ -1008,6 +1011,7 @@ async def register_files(body: FileRegisterBatch, current: dict = Depends(get_cu
             "external_id": item.external_id,
         })
         if existing:
+            records.append({"id": existing["id"], "external_id": item.external_id})
             continue
         rec = {
             "id": str(uuid.uuid4()),
@@ -1019,6 +1023,7 @@ async def register_files(body: FileRegisterBatch, current: dict = Depends(get_cu
             "size": item.size,
             "mime_type": item.mime_type,
             "sha256": item.sha256,
+            "fingerprint_kind": "sha256" if str(item.external_id or "").startswith("web:") else "unknown",
             "text_preview": "",
             "is_generic_name": is_generic_name(item.name),
             "ai_suggested_name": None,
@@ -1026,7 +1031,8 @@ async def register_files(body: FileRegisterBatch, current: dict = Depends(get_cu
         }
         await files_col.insert_one(rec)
         added += 1
-    return {"added": added, "submitted": len(body.items)}
+        records.append({"id": rec["id"], "external_id": item.external_id})
+    return {"added": added, "submitted": len(body.items), "records": records}
 
 
 @api.get("/files")
@@ -1044,28 +1050,21 @@ async def delete_file(file_id: str, current: dict = Depends(get_current_user)):
     if not rec:
         raise HTTPException(404, "File not found")
 
-    # If external source, delete remotely
-    if rec["source"] in ("gdrive", "dropbox", "onedrive", "gphotos") and rec.get("source_id"):
+    if rec["source"] != "internal":
+        if rec["source"] not in ("gdrive", "dropbox", "onedrive") or not rec.get("source_id"):
+            raise HTTPException(409, "Original deletion is not supported for this source")
         src = await sources_col.find_one({"id": rec["source_id"], "user_id": current["id"]})
-        if src:
-            try:
-                if rec["source"] == "gdrive":
-                    await drive_delete(src["access_token"], rec["external_id"])
-                elif rec["source"] == "dropbox":
-                    await dropbox_delete(src["access_token"], rec["external_id"])
-                elif rec["source"] == "onedrive":
-                    await onedrive_delete(src["access_token"], rec["external_id"])
-                elif rec["source"] == "gphotos":
-                    # Will return False — Google Photos API can't delete
-                    # items this app didn't create. See gphotos_delete()'s
-                    # docstring. We still remove it from OUR records below
-                    # so it stops showing as a duplicate here, even though
-                    # it isn't actually deleted from the user's Photos library.
-                    deleted = await gphotos_delete(src["access_token"], rec["external_id"])
-                    if not deleted:
-                        logger.info(f"gphotos_delete returned False for {rec['external_id']} (expected — see docstring)")
-            except Exception as e:
-                logger.warning(f"Remote delete failed: {e}")
+        if not src:
+            raise HTTPException(409, "Reconnect this source before cleanup")
+        try:
+            action = {"gdrive": drive_delete, "dropbox": dropbox_delete, "onedrive": onedrive_delete}[rec["source"]]
+            if not await action(src["access_token"], rec["external_id"]):
+                raise HTTPException(502, "Provider did not confirm cleanup; scan record retained")
+        except HTTPException:
+            raise
+        except Exception as error:
+            logger.warning("Remote cleanup failed: %s", type(error).__name__)
+            raise HTTPException(502, "Remote cleanup failed; scan record retained")
     await files_col.delete_one({"id": file_id, "user_id": current["id"]})
     return {"deleted": True, "source": rec["source"]}
 
@@ -1076,25 +1075,28 @@ async def rename_file(file_id: str, body: RenameApprove, current: dict = Depends
     if not rec:
         raise HTTPException(404, "File not found")
     new_name = body.new_name.strip()
-    if not new_name:
-        raise HTTPException(400, "Name cannot be empty")
-
-    if rec["source"] in ("gdrive", "dropbox", "onedrive") and rec.get("source_id"):
-        src = await sources_col.find_one({"id": rec["source_id"], "user_id": current["id"]})
-        if src:
-            try:
-                if rec["source"] == "gdrive":
-                    await drive_rename(src["access_token"], rec["external_id"], new_name)
-                elif rec["source"] == "dropbox":
-                    await dropbox_rename(src["access_token"], rec["external_id"], new_name)
-                elif rec["source"] == "onedrive":
-                    await onedrive_rename(src["access_token"], rec["external_id"], new_name)
-            except Exception as e:
-                logger.warning(f"Remote rename failed: {e}")
-    await files_col.update_one(
-        {"id": file_id},
-        {"$set": {"name": new_name, "is_generic_name": False, "ai_suggested_name": None}},
-    )
+    if not new_name or new_name in (".", "..") or len(new_name) > 200 or re.search(r'[\\/:*?"<>|\x00-\x1f]', new_name):
+        raise HTTPException(400, "Use a filename without paths or control characters")
+    if rec["source"] == "internal":
+        raise HTTPException(409, "Device originals cannot be renamed by the server; download a renamed copy or use your file manager")
+    if rec["source"] not in ("gdrive", "dropbox", "onedrive") or not rec.get("source_id"):
+        raise HTTPException(409, "Rename is not supported for this source")
+    src = await sources_col.find_one({"id": rec["source_id"], "user_id": current["id"]})
+    if not src:
+        raise HTTPException(409, "Reconnect this source before renaming")
+    try:
+        action = {"gdrive": drive_rename, "dropbox": dropbox_rename, "onedrive": onedrive_rename}[rec["source"]]
+        if not await action(src["access_token"], rec["external_id"], new_name):
+            raise HTTPException(502, "Provider did not confirm rename; original scan record retained")
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.warning("Remote rename failed: %s", type(error).__name__)
+        raise HTTPException(502, "Remote rename failed; original scan record retained")
+    update = {"name": new_name, "is_generic_name": False, "ai_suggested_name": None}
+    if rec["source"] == "dropbox":
+        update["external_id"] = "/".join(rec["external_id"].split("/")[:-1] + [new_name])
+    await files_col.update_one({"id": file_id, "user_id": current["id"]}, {"$set": update})
     return {"renamed": True, "new_name": new_name}
 
 
@@ -1106,22 +1108,21 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(404, "Source not found")
     files = await drive_list_files(src["access_token"], page_size=100)
     # Batch existence check to avoid N+1
-    existing_ids = {
-        doc["external_id"]
+    existing_map = {
+        doc["external_id"]: doc
         async for doc in files_col.find(
             {"user_id": current["id"], "source_id": source_id},
-            {"external_id": 1, "_id": 0},
+            {"external_id": 1, "id": 1, "_id": 0},
         )
     }
     added = 0
     for f in files:
         external_id = f["id"]
-        if external_id in existing_ids:
-            continue
         name = f.get("name", "unnamed")
         mime = f.get("mimeType", "")
         size = int(f.get("size", 0) or 0)
-        sha = f.get("md5Checksum", "")  # Drive provides md5 for binary files
+        sha = f.get("md5Checksum", "")  # Complete binary-file checksum
+        fingerprint_kind = "gdrive_md5" if sha else "unknown"
         text = ""
         phash = None
         # download sample to compute sha256 + text for textual files
@@ -1129,7 +1130,9 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
             try:
                 data = await drive_download_sample(src["access_token"], external_id, max_bytes=200000)
                 if data:
-                    sha = sha256_bytes(data) if not sha else sha
+                    if not sha:
+                        sha = sha256_bytes(data)
+                        fingerprint_kind = "sha256" if len(data) == size else "sample_sha256"
                     text = extract_text_from_bytes(data, mime, name)
             except Exception as e:
                 logger.warning(f"Drive sample download failed: {e}")
@@ -1148,7 +1151,7 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
             # fallback: hash from metadata
             sha = hashlib.sha256(f"{name}-{size}-{external_id}".encode()).hexdigest()
         rec = {
-            "id": str(uuid.uuid4()),
+            "id": existing_map.get(external_id, {}).get("id") or str(uuid.uuid4()),
             "user_id": current["id"],
             "source": "gdrive",
             "source_id": source_id,
@@ -1157,14 +1160,18 @@ async def scan_gdrive(source_id: str, current: dict = Depends(get_current_user))
             "size": size,
             "mime_type": mime,
             "sha256": sha,
+            "fingerprint_kind": fingerprint_kind,
             "phash": phash,
             "text_preview": text,
             "is_generic_name": is_generic_name(name),
             "ai_suggested_name": None,
             "created_at": f.get("createdTime") or datetime.now(timezone.utc).isoformat(),
         }
-        await files_col.insert_one(rec)
-        added += 1
+        if external_id in existing_map:
+            await files_col.update_one({"id": rec["id"], "user_id": current["id"]}, {"$set": rec})
+        else:
+            await files_col.insert_one(rec)
+            added += 1
     return {"added": added, "total_listed": len(files)}
 
 
@@ -1175,11 +1182,11 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
         raise HTTPException(404, "Source not found")
     files = await dropbox_list_files(src["access_token"])
     # Batch existence check to avoid N+1
-    existing_ids = {
-        doc["external_id"]
+    existing_map = {
+        doc["external_id"]: doc
         async for doc in files_col.find(
             {"user_id": current["id"], "source_id": source_id},
-            {"external_id": 1, "_id": 0},
+            {"external_id": 1, "id": 1, "_id": 0},
         )
     }
     added = 0
@@ -1187,11 +1194,10 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
         external_id = f.get("path_lower") or f.get("path_display") or f.get("id")
         if not external_id:
             continue
-        if external_id in existing_ids:
-            continue
         name = f.get("name", "unnamed")
         size = int(f.get("size", 0) or 0)
-        sha = f.get("content_hash", "")  # dropbox-specific hash
+        sha = f.get("content_hash", "")  # Complete Dropbox content hash
+        fingerprint_kind = "dropbox_content_hash" if sha else "unknown"
         text = ""
         phash = None
         mime = ""
@@ -1200,7 +1206,9 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
             try:
                 data = await dropbox_download_sample(src["access_token"], external_id, max_bytes=200000)
                 if data:
-                    sha = sha256_bytes(data)
+                    if not sha:
+                        sha = sha256_bytes(data)
+                        fingerprint_kind = "sha256" if len(data) == size else "sample_sha256"
                     text = extract_text_from_bytes(data, mime, name)
             except Exception as e:
                 logger.warning(f"Dropbox sample download failed: {e}")
@@ -1218,7 +1226,7 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
         if not sha:
             sha = hashlib.sha256(f"{name}-{size}-{external_id}".encode()).hexdigest()
         rec = {
-            "id": str(uuid.uuid4()),
+            "id": existing_map.get(external_id, {}).get("id") or str(uuid.uuid4()),
             "user_id": current["id"],
             "source": "dropbox",
             "source_id": source_id,
@@ -1227,14 +1235,18 @@ async def scan_dropbox(source_id: str, current: dict = Depends(get_current_user)
             "size": size,
             "mime_type": mime,
             "sha256": sha,
+            "fingerprint_kind": fingerprint_kind,
             "phash": phash,
             "text_preview": text,
             "is_generic_name": is_generic_name(name),
             "ai_suggested_name": None,
             "created_at": f.get("client_modified") or datetime.now(timezone.utc).isoformat(),
         }
-        await files_col.insert_one(rec)
-        added += 1
+        if external_id in existing_map:
+            await files_col.update_one({"id": rec["id"], "user_id": current["id"]}, {"$set": rec})
+        else:
+            await files_col.insert_one(rec)
+            added += 1
     return {"added": added, "total_listed": len(files)}
 
 
@@ -1295,7 +1307,7 @@ async def ai_pick_most_comprehensive_image(files: List[dict], user_id: str) -> d
 
 # ----- Dedup + rename suggestions -----
 @api.post("/scan/analyze")
-async def analyze(current: dict = Depends(get_current_user)):
+async def analyze(current: dict = Depends(get_current_user), basic_only: bool = False):
     """Four-phase dedup:
     1. Exact fingerprint matches → deterministic recommendation, no AI.
     2. Near-duplicates / drafts: cluster by filename root + same extension.
@@ -1315,7 +1327,10 @@ async def analyze(current: dict = Depends(get_current_user)):
     # ----- Phase 1: exact hash duplicates -----
     hash_groups: Dict[str, List[dict]] = {}
     for f in files:
-        hash_groups.setdefault(f["sha256"], []).append(f)
+        fingerprint = exact_fingerprint(f)
+        if fingerprint is not None:
+            hash_groups.setdefault(fingerprint, []).append(f)
+
 
     analyzed = []
     space_recoverable = 0
@@ -1323,7 +1338,7 @@ async def analyze(current: dict = Depends(get_current_user)):
         if len(g) <= 1:
             continue
         keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
-        decision = {"keep_id": keep["id"], "reason": "Matching stored fingerprints; suggested copy chosen by size/date without AI. Verify cloud matches because some fingerprints are sampled."}
+        decision = {"keep_id": keep["id"], "reason": "Matching complete-file fingerprints; one representative chosen without AI and retained for comparison with other versions."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
         for f in g:
@@ -1423,19 +1438,20 @@ async def analyze(current: dict = Depends(get_current_user)):
             "space_recoverable": group_size,
         })
 
-    # Second pass: inspect candidate groups only after standard matching finishes.
-    # Exact fingerprint groups are already resolved and never consume Claude calls.
-    for group in analyzed:
-        if group["kind"] == "similar_image":
-            decision = await ai_pick_most_comprehensive_image(group["files"], current["id"])
-            group["vision_used"] = decision["vision_used"]
-        elif group["kind"] in ("draft_cluster", "partial_content") and any(f.get("text_preview") for f in group["files"]):
-            decision = await ai_pick_most_comprehensive(group["files"])
-        else:
-            continue
-        group["keep_id"] = decision["keep_id"]
-        group["reason"] = decision["reason"]
-        group["space_recoverable"] = sum(f.get("size", 0) for f in group["files"] if f["id"] != decision["keep_id"])
+    if not basic_only:
+        # Second pass: inspect candidate groups only after standard matching finishes.
+        # Exact fingerprint groups are already resolved and never consume Claude calls.
+        for group in analyzed:
+            if group["kind"] == "similar_image":
+                decision = await ai_pick_most_comprehensive_image(group["files"], current["id"])
+                group["vision_used"] = decision["vision_used"]
+            elif group["kind"] in ("draft_cluster", "partial_content") and any(f.get("text_preview") for f in group["files"]):
+                decision = await ai_pick_most_comprehensive(group["files"])
+            else:
+                continue
+            group["keep_id"] = decision["keep_id"]
+            group["reason"] = decision["reason"]
+            group["space_recoverable"] = sum(f.get("size", 0) for f in group["files"] if f["id"] != decision["keep_id"])
     space_recoverable = sum(group["space_recoverable"] for group in analyzed)
 
     await db.scan_results.update_one(
@@ -1615,7 +1631,7 @@ async def stripe_webhook(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "raven-sharp-smart-cleaner"}
+    return {"ok": True, "service": "raven-sharp-smart-cleaner", "content_review_version": "v1"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -1626,10 +1642,96 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
-    allow_origin_regex=r"https://.*\.raven-sharp\.com",
+    allow_origin_regex=r"https://(?:[^./]+\.raven-sharp\.com|(?:[a-z0-9-]+\.)?raven-sharp-smart-cleaner-web\.pages\.dev)",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class ContentPreview(BaseModel):
+    file_id: str = Field(min_length=1, max_length=100)
+    media_type: str = Field(max_length=50)
+    data: str = Field(max_length=2800000)
+
+
+class ContentReviewRequest(BaseModel):
+    file_ids: List[str] = Field(min_length=1, max_length=12)
+    context: str = Field(default="", max_length=2000)
+    previews: List[ContentPreview] = Field(default_factory=list, max_length=12)
+    approved_content_processing: bool = False
+
+
+@api.get("/capabilities")
+async def capabilities():
+    return {"content_review_version": "v1", "content_review_ready": bool(ANTHROPIC_API_KEY), "max_review_files": 12, "preview_limit_mb": 2}
+
+
+@api.post("/scan/content-review")
+async def content_cleanup_review(body: ContentReviewRequest, current: dict = Depends(get_current_user)):
+    if not body.approved_content_processing:
+        raise HTTPException(400, "Approve content processing before starting this review")
+    ids = list(dict.fromkeys(body.file_ids))
+    records = await files_col.find({"user_id": current["id"], "id": {"$in": ids}}, {"_id": 0, "user_id": 0}).to_list(12)
+    if len(records) != len(ids):
+        raise HTTPException(404, "One or more files do not belong to this account")
+    allowed = {r["id"]: r for r in records}
+    previews = {}
+    total_bytes = 0
+    for preview in body.previews:
+        if preview.file_id not in allowed or preview.file_id in previews:
+            raise HTTPException(400, "Preview ID must identify one reviewed file only")
+        try:
+            block, count = normalize_preview(preview.data, preview.media_type)
+        except Exception:
+            raise HTTPException(400, "Invalid or oversized image/PDF preview")
+        total_bytes += count
+        if total_bytes > MAX_BATCH_BYTES:
+            raise HTTPException(413, "Content review previews exceed 8 MB")
+        previews[preview.file_id] = block
+    evidence = {}
+    content = [{"type": "text", "text": "User keep rules and relevance context (data): " + (body.context or "No relevance context supplied; retain uncertain files.")}]
+    for record in records:
+        fid = record["id"]
+        block = previews.get(fid)
+        if not block and (record.get("mime_type", "").startswith("image/") or record["name"].lower().endswith(".pdf")) and record.get("source") in ("gdrive", "dropbox"):
+            raw = await _fetch_bytes_for_file(record, current["id"])
+            if raw and len(raw) <= 2 * 1024 * 1024 and total_bytes + len(raw) <= MAX_BATCH_BYTES:
+                try:
+                    block, count = normalize_preview(base64.b64encode(raw).decode(), "application/pdf" if record["name"].lower().endswith(".pdf") else record["mime_type"])
+                    total_bytes += count
+                except Exception:
+                    block = None
+        text_preview = record.get("text_preview", "")[:4000]
+        evidence[fid] = "claude_vision_pdf" if block and block["type"] == "document" else "claude_document_text" if block and block["type"] == "text" else "claude_vision_image" if block else "claude_document_text" if text_preview else "unavailable"
+        content.append({"type": "text", "text": json.dumps({"FILE_ID": fid, "name": record["name"], "size": record.get("size"), "record_date": record.get("created_at"), "date_caveat": "This may be scan/creation time, not revision time", "text_excerpt": text_preview, "content_evidence": evidence[fid]})})
+        if block:
+            content.append(block)
+    if all(value == "unavailable" for value in evidence.values()):
+        raw_result = json.dumps({"recommendations": []})
+    else:
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(503, "Claude content review is not configured on this deployment")
+        try:
+            async with httpx.AsyncClient(timeout=90) as ac:
+                response = await ac.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}, json={"model": CLAUDE_MODEL, "max_tokens": 2400, "system": REVIEW_SYSTEM, "messages": [{"role": "user", "content": content}]})
+            if response.status_code != 200:
+                logger.warning("Claude review rejected: status %s", response.status_code)
+                raise HTTPException(502, "Claude could not complete this review; no files changed")
+            raw_result = "".join(b.get("text", "") for b in response.json().get("content", []) if b.get("type") == "text")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(502, "Claude review unavailable; no files changed")
+    try:
+        recommendations = parse_recommendations(raw_result, records, evidence)
+    except Exception:
+        raise HTTPException(502, "Claude returned an invalid review; no files changed")
+    review_id = str(uuid.uuid4())
+    await db.content_reviews.insert_one({"id": review_id, "user_id": current["id"], "created_at": datetime.now(timezone.utc).isoformat(), "recommendations": recommendations})
+    for item in recommendations:
+        if item.get("suggested_name"):
+            await files_col.update_one({"id": item["file"]["id"], "user_id": current["id"]}, {"$set": {"ai_suggested_name": item["suggested_name"]}})
+    return {"review_id": review_id, "recommendations": recommendations, "originals_changed": False}
+
 
 app.include_router(api)
 
