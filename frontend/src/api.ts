@@ -76,6 +76,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ access_token, account_label }),
     }),
+  connectOneDrive: (access_token: string, account_label: string) =>
+    request<any>("/sources/onedrive", {
+      method: "POST",
+      body: JSON.stringify({ access_token, account_label }),
+    }),
+  connectGPhotos: (access_token: string, account_label: string) =>
+    request<any>("/sources/gphotos", {
+      method: "POST",
+      body: JSON.stringify({ access_token, account_label }),
+    }),
   disconnectSource: (id: string) =>
     request<any>(`/sources/${id}`, { method: "DELETE" }),
 
@@ -98,6 +108,10 @@ export const api = {
     request<any>(`/scan/gdrive/${sourceId}`, { method: "POST" }),
   scanDropbox: (sourceId: string) =>
     request<any>(`/scan/dropbox/${sourceId}`, { method: "POST" }),
+  scanOneDrive: (sourceId: string) =>
+    request<any>(`/scan/onedrive/${sourceId}`, { method: "POST" }),
+  scanGPhotos: (sourceId: string) =>
+    request<any>(`/scan/gphotos/${sourceId}`, { method: "POST" }),
   analyze: () => request<any>("/scan/analyze", { method: "POST" }),
   renameCandidates: () => request<any>("/scan/rename-candidates"),
 
