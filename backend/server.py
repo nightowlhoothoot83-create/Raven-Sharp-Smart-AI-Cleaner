@@ -1297,13 +1297,14 @@ async def ai_pick_most_comprehensive_image(files: List[dict], user_id: str) -> d
 @api.post("/scan/analyze")
 async def analyze(current: dict = Depends(get_current_user)):
     """Four-phase dedup:
-    1. Exact duplicates by sha256 → AI picks most comprehensive.
+    1. Exact fingerprint matches → deterministic recommendation, no AI.
     2. Near-duplicates / drafts: cluster by filename root + same extension.
-       AI confirms they're variants and picks the most comprehensive.
+       Collect candidates before content comparison.
     3. Content-similar text files regardless of filename (shingle/Jaccard).
-       AI picks the most comprehensive.
+       Collect candidates before content comparison.
     4. Visually-similar images regardless of filename (perceptual hash) —
-       largest/most recent kept as the likely original/highest quality."""
+       Collect candidates before Vision comparison.
+    All candidate grouping completes before any Claude calls."""
     files = await files_col.find(
         {"user_id": current["id"]},
         {"_id": 0, "user_id": 0},
@@ -1321,16 +1322,14 @@ async def analyze(current: dict = Depends(get_current_user)):
     for g in hash_groups.values():
         if len(g) <= 1:
             continue
-        has_text = any(f.get("text_preview") for f in g)
-        if has_text:
-            decision = await ai_pick_most_comprehensive(g)
-        else:
-            keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
-            decision = {"keep_id": keep["id"], "reason": "Largest/most recent identical file kept."}
+        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        decision = {"keep_id": keep["id"], "reason": "Matching stored fingerprints; suggested copy chosen by size/date without AI. Verify cloud matches because some fingerprints are sampled."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
         for f in g:
             seen_in_group.add(f["id"])
+        # Compare one representative of an exact-match set with other versions later.
+        seen_in_group.discard(decision["keep_id"])
         analyzed.append({
             "kind": "exact_duplicate",
             "files": g,
@@ -1359,13 +1358,9 @@ async def analyze(current: dict = Depends(get_current_user)):
     for g in root_groups.values():
         if len(g) <= 1:
             continue
-        # Has text content? use AI; otherwise pick largest as most comprehensive
-        has_text = any(f.get("text_preview") for f in g)
-        if has_text:
-            decision = await ai_pick_most_comprehensive(g)
-        else:
-            keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
-            decision = {"keep_id": keep["id"], "reason": "Largest variant kept as most comprehensive."}
+        # Candidate grouping is non-AI; content inspection runs after all groups exist.
+        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        decision = {"keep_id": keep["id"], "reason": "Related filenames; suggested copy chosen by size/date only. Content completeness has not been verified."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
         for f in g:
@@ -1389,7 +1384,8 @@ async def analyze(current: dict = Depends(get_current_user)):
     ]
     content_clusters = cluster_by_content(remaining_text_files, threshold=0.35)
     for g in content_clusters:
-        decision = await ai_pick_most_comprehensive(g)
+        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        decision = {"keep_id": keep["id"], "reason": "Related document text; awaiting content comparison."}
         group_size = sum(f.get("size", 0) for f in g if f["id"] != decision["keep_id"])
         space_recoverable += group_size
         for f in g:
@@ -1411,7 +1407,8 @@ async def analyze(current: dict = Depends(get_current_user)):
     ]
     image_clusters = cluster_by_image_similarity(remaining_images, max_distance=10)
     for g in image_clusters:
-        decision = await ai_pick_most_comprehensive_image(g, current["id"])
+        keep = max(g, key=lambda x: (x.get("size", 0), x.get("created_at", "")))
+        decision = {"keep_id": keep["id"], "reason": "Similar image fingerprints; awaiting visual comparison.", "vision_used": False}
         keep_id = decision["keep_id"]
         group_size = sum(f.get("size", 0) for f in g if f["id"] != keep_id)
         space_recoverable += group_size
@@ -1425,6 +1422,21 @@ async def analyze(current: dict = Depends(get_current_user)):
             "vision_used": decision["vision_used"],
             "space_recoverable": group_size,
         })
+
+    # Second pass: inspect candidate groups only after standard matching finishes.
+    # Exact fingerprint groups are already resolved and never consume Claude calls.
+    for group in analyzed:
+        if group["kind"] == "similar_image":
+            decision = await ai_pick_most_comprehensive_image(group["files"], current["id"])
+            group["vision_used"] = decision["vision_used"]
+        elif group["kind"] in ("draft_cluster", "partial_content") and any(f.get("text_preview") for f in group["files"]):
+            decision = await ai_pick_most_comprehensive(group["files"])
+        else:
+            continue
+        group["keep_id"] = decision["keep_id"]
+        group["reason"] = decision["reason"]
+        group["space_recoverable"] = sum(f.get("size", 0) for f in group["files"] if f["id"] != decision["keep_id"])
+    space_recoverable = sum(group["space_recoverable"] for group in analyzed)
 
     await db.scan_results.update_one(
         {"user_id": current["id"]},
@@ -1632,3 +1644,4 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
+
