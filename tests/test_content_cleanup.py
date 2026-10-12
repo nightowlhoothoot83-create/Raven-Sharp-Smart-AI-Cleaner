@@ -107,4 +107,12 @@ class ContentCleanupTests(unittest.TestCase):
         with patch.object(server.httpx,'AsyncClient',return_value=Failure()):r=self.client.post('/api/scan/content-review',json=self.body())
         self.assertEqual(r.status_code,502);self.assertEqual(self.files.deletes,[]);self.assertEqual(self.files.updates,[])
 
+    def test_docx_preview_mime_type_and_excerpt_are_supported(self):
+        from docx import Document
+        doc=Document();doc.add_paragraph('Totalspan signed final plan');buf=io.BytesIO();doc.save(buf)
+        data=base64.b64encode(buf.getvalue()).decode()
+        preview=server.ContentPreview(file_id='mine',media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',data=data)
+        block,count=normalize_preview(preview.data,preview.media_type)
+        self.assertEqual(block['type'],'text');self.assertIn('Totalspan signed final plan',block['text'])
+
 if __name__=='__main__':unittest.main()
