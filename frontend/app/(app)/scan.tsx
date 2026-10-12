@@ -15,8 +15,6 @@ const BATCH_SIZE = 50;
 const HASH_BYTES = 65536; // hash first 64KB for speed; collisions handled by AI dedup pass
 
 async function hashAssetUri(uri: string): Promise<string> {
-  // Read up to HASH_BYTES bytes as base64 and hash. Fast, collision-acceptable for media dedup
-  // since AI dedup pass handles edge cases via filename + size.
   try {
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: FileSystem.EncodingType.Base64,
@@ -25,7 +23,6 @@ async function hashAssetUri(uri: string): Promise<string> {
     });
     return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, base64);
   } catch {
-    // fallback to filename-based id
     return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, uri);
   }
 }
@@ -90,7 +87,7 @@ export default function Scan() {
     if (Platform.OS === "web") {
       Alert.alert(
         "Scan folder instead",
-        "Web browsers can't access your phone's photo library directly. Use 'Scan documents' to pick a folder — the browser will let you select an entire folder including all photos inside.\n\nFor real photo-library scanning, open RavenSharp in Expo Go on your phone.",
+        "Web browsers can't access your phone's photo library directly. Use 'Scan documents' to pick a folder — the browser will let you select an entire folder including all photos inside.\n\nFor the image gallery/gallery on a phone, use Android's folder picker or the mobile gallery access flow.",
         [
           { text: "OK", style: "cancel" },
           { text: "Scan a folder", onPress: () => scanWebFolder() },
@@ -107,7 +104,6 @@ export default function Scan() {
     pushLog("Enumerating media library...");
 
     try {
-      // First, count total
       const first = await MediaLibrary.getAssetsAsync({ first: 1, mediaType: ["photo", "video"] });
       const total = first.totalCount;
       pushLog(`Found ${total} photos & videos`);
@@ -138,7 +134,6 @@ export default function Scan() {
           if (cancelRef.current) break;
           setProgress({ current: processed, total, name: asset.filename });
           try {
-            // get full info to access localUri
             const info = await MediaLibrary.getAssetInfoAsync(asset, { shouldDownloadFromNetwork: false });
             const uri = info.localUri || asset.uri;
             if (!uri) {
@@ -146,7 +141,6 @@ export default function Scan() {
               continue;
             }
             const sha = await hashAssetUri(uri);
-            // size may not be on asset; try FileSystem
             let size = 0;
             try {
               const stat = await FileSystem.getInfoAsync(uri, { size: true });
@@ -161,7 +155,7 @@ export default function Scan() {
               external_id: asset.id,
               created_at: new Date(asset.modificationTime || asset.creationTime || Date.now()).toISOString(),
             });
-          } catch (e: any) {
+          } catch {
             // ignore single-asset failure
           }
           processed++;
@@ -193,6 +187,35 @@ export default function Scan() {
     }
   };
 
+  const scanGallery = async () => {
+    if (Platform.OS === "web") {
+      Alert.alert(
+        "Choose a folder",
+        "The web app cannot reach the device image gallery directly. Select a folder such as Downloads or Pictures to scan it instead.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Pick folder", onPress: () => scanWebFolder() },
+        ],
+      );
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      Alert.alert(
+        "Scan image gallery",
+        "This scans your photo library and gallery. If you want to target a specific folder such as Downloads, DCIM, or Pictures, use 'Scan any folder'.",
+        [
+          { text: "Use gallery", onPress: () => scanAllMedia() },
+          { text: "Choose folder", onPress: () => scanFolderAndroid() },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
+      return;
+    }
+
+    return scanAllMedia();
+  };
+
   const scanFolderAndroid = async () => {
     if (Platform.OS !== "android") {
       Alert.alert(
@@ -211,7 +234,6 @@ export default function Scan() {
       cancelRef.current = false;
       pushLog("Walking folder tree...");
 
-      // Recursive walk
       const allFiles: { uri: string; name: string }[] = [];
       const stack: string[] = [rootUri];
       while (stack.length) {
@@ -220,7 +242,6 @@ export default function Scan() {
         try {
           const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(dir);
           for (const entry of entries) {
-            // SAF returns content URIs for both files and dirs; we can't easily distinguish without statting.
             try {
               const info = await FileSystem.getInfoAsync(entry, { size: true });
               if (info.exists && (info as any).isDirectory) {
@@ -306,14 +327,11 @@ export default function Scan() {
 
   const scanDocuments = async () => {
     if (Platform.OS === "web") {
-      // Web: use a browser folder-picker <input webkitdirectory multiple>
       return scanWebFolder();
     }
     if (Platform.OS === "android") {
-      // Android: full folder scan via SAF
       return scanFolderAndroid();
     }
-    // iOS: fall back to document picker (sandbox forbids folder access)
     Alert.alert(
       "Pick documents to scan",
       "Apple's sandbox blocks folder access. Pick the documents you want analysed — AI will then detect duplicates, drafts, and partial versions.",
@@ -325,8 +343,6 @@ export default function Scan() {
   };
 
   const scanWebFolder = async () => {
-    // Web-only: creates a hidden <input> with webkitdirectory to let user pick an entire folder.
-    // The browser walks the folder recursively and gives us all files.
     if (typeof document === "undefined") return;
     setLog([]);
     const input = document.createElement("input") as HTMLInputElement;
@@ -349,7 +365,6 @@ export default function Scan() {
       for (let i = 0; i < files.length; i++) {
         if (cancelRef.current) break;
         const f = files[i];
-        // Skip huge files (>25MB) to avoid backend rejection
         if (f.size > 25 * 1024 * 1024) {
           pushLog(`✗ ${f.name} (too large, skipped)`);
           setProgress({ current: i + 1, total: files.length });
@@ -357,7 +372,6 @@ export default function Scan() {
         }
         setProgress({ current: i, total: files.length, name: f.name });
         try {
-          // Upload as multipart. Use FormData with the Blob.
           const form = new FormData();
           form.append("file", f, f.name);
           const t = await getToken();
@@ -493,14 +507,25 @@ export default function Scan() {
               <Ionicons name="flash" size={20} color="#fff" />
             </TouchableOpacity>
 
+            <TouchableOpacity testID="btn-scan-gallery" style={[styles.bigBtn, shadow.card]} onPress={scanGallery}>
+              <View style={[styles.bigIcon, { backgroundColor: colors.aiSoft }]}>
+                <Ionicons name="camera-outline" size={26} color={colors.ai} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bigTitle}>Scan image gallery</Text>
+                <Text style={styles.bigBody}>Photos, screenshots & camera roll</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
             {Platform.OS === "android" && (
               <TouchableOpacity testID="btn-scan-folder" style={[styles.bigBtn, shadow.card]} onPress={scanFolderAndroid}>
-              <View style={[styles.bigIcon, { backgroundColor: colors.aiSoft }]}>
-                <Ionicons name="folder-open-outline" size={26} color={colors.ai} />
+                <View style={[styles.bigIcon, { backgroundColor: colors.aiSoft }]}>
+                  <Ionicons name="folder-open-outline" size={26} color={colors.ai} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bigTitle}>Scan any folder</Text>
-                  <Text style={styles.bigBody}>Downloads, WhatsApp media, anywhere on device</Text>
+                  <Text style={styles.bigBody}>Downloads, Documents, DCIM, Pictures, WhatsApp media</Text>
                 </View>
                 <View style={styles.androidBadge}>
                   <Text style={styles.androidBadgeText}>ANDROID</Text>
@@ -525,7 +550,7 @@ export default function Scan() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.bigTitle}>Scan cloud sources</Text>
-                <Text style={styles.bigBody}>Google Drive & Dropbox accounts</Text>
+                <Text style={styles.bigBody}>Google Drive, Dropbox, OneDrive & Google Photos</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
