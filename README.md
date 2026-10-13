@@ -1,14 +1,15 @@
-# Raven Sharp AI File Manager — Android and Shared API
+# Raven Sharp AI File Manager — Shared API
 
-This repository contains two components:
+The active product is the **Web app**, usable in a browser on phones and PCs. Finish, deploy and test that version first.
 
-| Component | Folder | Role |
-|---|---|---|
-| Raven Sharp AI File Manager — Android | `frontend/` | Expo mobile app |
-| Raven Sharp AI File Manager — Shared API | `backend/` | Python API deployed on Railway, used by both Android and the web app |
+## Active backend
 
-The web interface is maintained separately in [Raven-Sharp-Smart-Cleaner-Web](https://github.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web). It runs in a browser on phones and PCs and is hosted on Cloudflare Pages.
+`backend/` contains the Shared API deployed on Railway. Both the current web interface and any future phone app can use it. Railway should deploy this repository's `main` branch.
 
-Railway must deploy this repository's `main` branch for the Shared API. The web interface connects to `https://raven-sharp-smart-ai-cleaner-production.up.railway.app/api`.
+The web interface lives in [Raven-Sharp-Smart-Cleaner-Web](https://github.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web) and uses `https://raven-sharp-smart-ai-cleaner-production.up.railway.app/api`.
 
-Display labels distinguish the components; repository paths and deployment URLs remain stable. A future repository separation must migrate the backend source, CI, deployment settings and both client API connections together.
+## Paused Android prototype
+
+`frontend/` contains an earlier Expo mobile prototype. Android work is paused. This folder is retained for reference and is not the active interface or part of the web release. Revisit a native phone app after the web product is finished and tested.
+
+Repository URLs remain stable so the existing Railway backend connection is preserved.
