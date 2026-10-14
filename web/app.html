@@ -190,7 +190,7 @@ nav.topbar .brand{display:flex;align-items:center;gap:12px}nav.topbar .brand img
         <details class="source-option"><summary>Add device source</summary>
           <p class="scan-help">Choose only the files you want to scan. Folder access depends on your browser.</p>
           <div class="scan-actions">
-            <button onclick="document.getElementById('choose-photos').click()">Gallery / photos</button>
+            <button onclick="document.getElementById('choose-photo-folder').click()">Photo / gallery folder</button>
             <button onclick="document.getElementById('choose-folder').click()">Downloads / Pictures / Documents folder</button>
             <button onclick="document.getElementById('choose-files').click()">Choose any files</button>
           </div>
@@ -221,17 +221,19 @@ nav.topbar .brand{display:flex;align-items:center;gap:12px}nav.topbar .brand img
     <section class="panel">
       <h2>1. Scan files from this device</h2>
       <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
-        On your PC or phone, choose files, photos or a folder such as Downloads, Documents or Pictures. Only your selection is scanned.
+        Choose a whole folder such as Downloads, Documents, Pictures or DCIM. Its files and subfolders are included. Only your chosen folders are scanned.
       </p>
       <div class="scan-actions">
-        <button id="choose-files" type="button">Choose files</button>
-        <button id="choose-photos" type="button">Choose photos &amp; videos</button>
-        <button id="choose-folder" type="button" class="ghost">Choose folder</button>
+        <button id="choose-folder" type="button">Choose folder</button>
+        <button id="choose-photo-folder" type="button">Choose photo / gallery folder</button>
+        <button id="choose-files" type="button" class="ghost">Individual files (optional)</button>
+        <button id="choose-photos" type="button" class="ghost">Individual photos (optional)</button>
       </div>
       <input id="device-files" type="file" multiple hidden>
       <input id="device-photos" type="file" multiple accept="image/*,video/*" hidden>
       <input id="device-folder" type="file" multiple webkitdirectory hidden>
-      <p id="folder-help" class="scan-help">Folder selection depends on your browser. If it is unavailable on your phone, use Choose files or Choose photos &amp; videos. Files over 128 MB are skipped to protect browser memory.</p>
+      <input id="device-photo-folder" type="file" multiple webkitdirectory hidden>
+      <p id="folder-help" class="scan-help">Select the folder itself, then tap Use this folder or Select. For photos, choose DCIM, Pictures or an album's storage folder; photos and videos in its subfolders are included. Virtual albums inside the Gallery app are not device folders. If you only see individual files, open this page in an updated Chrome browser. Files over 128 MB are skipped to protect browser memory.</p>
       <label class="scan-consent"><input id="content-analysis" type="checkbox"> Include content analysis: send selected files up to 25 MB each for document text and photo similarity analysis. Larger files use exact matching only.</label>
       <p class="scan-help">By default, file contents stay on your device. File names, sizes and full-file fingerprints are sent to your account for exact matching. Scanning never deletes or renames your originals.</p>
       <p class="scan-help">Basic scanning finds fingerprint matches and related candidates first. Use the second-stage content cleanup below to inspect image previews, PDF pages and document excerpts with Claude.</p>
@@ -286,7 +288,7 @@ nav.topbar .brand{display:flex;align-items:center;gap:12px}nav.topbar .brand img
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/device-scan.js"></script>
+<script src="/device-scan.js?v=folder-picker-20261015"></script>
 <script src="/source-dashboard.js"></script>
 <script src="/content-cleanup.js"></script>
 <script src="/connection-check.js" defer></script>
@@ -399,5 +401,6 @@ if (token) { showApp().then(handleOAuthCallback); } else { setAuthMode("login");
 </script>
 </body>
 </html>
+
 
 

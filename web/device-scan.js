@@ -9,8 +9,9 @@
   let controller = null;
   let busy = false;
   let generation = 0;
+  const folderPaths = new WeakMap();
   const text = value => String(value ?? "");
-  const pathOf = file => file.webkitRelativePath || file.name;
+  const pathOf = file => folderPaths.get(file) || file.webkitRelativePath || file.name;
   const keyOf = file => JSON.stringify([pathOf(file), file.size, file.lastModified]);
   const node = (tag, value, className) => {
     const n = document.createElement(tag);
@@ -20,11 +21,10 @@
   };
   function setBusy(value) {
     busy = value;
-    ["choose-files", "choose-photos", "choose-folder", "content-analysis", "scan-btn"].forEach(id => el(id).disabled = value);
+    ["choose-files", "choose-photos", "choose-folder", "choose-photo-folder", "content-analysis", "scan-btn"].forEach(id => el(id).disabled = value);
     el("device-scan-btn").disabled = value || !selected.size;
     el("clear-selection").disabled = value || !selected.size;
     el("cancel-scan").classList.toggle("hidden", !value);
-    if (!value && !("webkitdirectory" in el("device-folder"))) el("choose-folder").disabled = true;
   }
   function renderSelection() {
     el("selection-summary").textContent = selected.size
@@ -39,6 +39,73 @@
     if (busy) return;
     for (const file of files) selected.set(keyOf(file), file);
     renderSelection();
+  }
+  function isMedia(file) {
+    return /^(image|video)\//.test(file.type || "") || /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp|3gp|avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i.test(file.name);
+  }
+  function selectFolderFiles(files, photosOnly = false) {
+    if (busy) return;
+    const entries = Array.from(files);
+    if (!entries.length) return;
+    if (entries.some(file => !file.webkitRelativePath?.includes("/"))) {
+      el("device-status").textContent = "Your browser opened a file picker instead of a folder picker. Open this page in an updated Chrome browser and choose the folder again. No individual files were added.";
+      return;
+    }
+    const matches = photosOnly ? entries.filter(isMedia) : entries;
+    selectFiles(matches);
+    el("device-status").textContent = matches.length
+      ? "Folder added, including subfolders. Review the selection, then scan."
+      : "This folder contains no supported photos or videos.";
+  }
+  async function chooseFolder(photosOnly = false) {
+    if (busy) return;
+    // Invoke the picker directly from the click, while user activation is valid.
+    if (typeof window.showDirectoryPicker !== "function") {
+      const input = el(photosOnly ? "device-photo-folder" : "device-folder");
+      input.webkitdirectory = true;
+      input.setAttribute("webkitdirectory", "");
+      input.click();
+      return;
+    }
+    const runGeneration = generation;
+    try {
+      const directory = await window.showDirectoryPicker({ mode: "read" });
+      if (runGeneration !== generation) return;
+      controller = new AbortController();
+      const signal = controller.signal;
+      setBusy(true);
+      const files = [];
+      async function walk(handle, path) {
+        for await (const entry of handle.values()) {
+          cancelled(signal);
+          const entryPath = path + "/" + entry.name;
+          if (entry.kind === "directory") await walk(entry, entryPath);
+          else if (entry.kind === "file") {
+            const file = await entry.getFile();
+            cancelled(signal);
+            if (!photosOnly || isMedia(file)) {
+              folderPaths.set(file, entryPath);
+              files.push(file);
+            }
+          }
+          el("device-status").textContent = "Reading folder: " + files.length + " files found…";
+        }
+      }
+      await walk(directory, directory.name);
+      cancelled(signal);
+      if (runGeneration !== generation) return;
+      setBusy(false);
+      selectFiles(files);
+      el("device-status").textContent = files.length
+        ? "Folder added, including subfolders. Review the selection, then scan."
+        : photosOnly ? "This folder contains no supported photos or videos." : "This folder is empty.";
+    } catch (error) {
+      if (runGeneration === generation && error.name !== "AbortError") {
+        el("device-status").textContent = "Could not read this folder: " + error.message + ". Choose the folder again.";
+      }
+    } finally {
+      if (runGeneration === generation) { controller = null; setBusy(false); }
+    }
   }
   async function hashFile(file) {
     if (file.size > MAX_HASH) throw new Error("Above the 128 MB browser scan limit; choose a smaller file.");
@@ -207,7 +274,7 @@
     controller?.abort();
     controller = null;
     selected.clear(); localFiles.clear(); groups = [];
-    ["device-files", "device-photos", "device-folder"].forEach(id => el(id).value = "");
+    ["device-files", "device-photos", "device-folder", "device-photo-folder"].forEach(id => el(id).value = "");
     el("scan-errors").replaceChildren();
     el("device-status").textContent = "";
     el("scan-status").textContent = "";
@@ -256,10 +323,16 @@
       if (runGeneration === generation) { controller = null; setBusy(false); }
     }
   }
-  ["files", "photos", "folder"].forEach(kind => {
+  ["files", "photos"].forEach(kind => {
     const input = el("device-" + kind);
     el("choose-" + kind).addEventListener("click", () => input.click());
     input.addEventListener("change", () => { selectFiles(input.files || []); input.value = ""; });
+  });
+  el("choose-folder").addEventListener("click", () => chooseFolder(false));
+  el("choose-photo-folder").addEventListener("click", () => chooseFolder(true));
+  [["device-folder", false], ["device-photo-folder", true]].forEach(([id, photosOnly]) => {
+    const input = el(id);
+    input.addEventListener("change", () => { selectFolderFiles(input.files || [], photosOnly); input.value = ""; });
   });
   el("clear-selection").addEventListener("click", () => { selected.clear(); renderSelection(); });
   el("device-scan-btn").addEventListener("click", scanSelected);
@@ -269,6 +342,7 @@
     note: "Recommendations only. No original device files have been deleted or renamed.",
     duplicate_groups: groups, content_review: window.ContentCleanup?.report() || []
   }, null, 2)], { type: "application/json" }), "smart-cleaner-review.json"));
-  window.Cleaner = { renderGroups, renderRenames, reset, hashFile, selectFiles, scanSelected, scanCloud, getLocalFile: id => localFiles.get(id), download, setReviewBusy: setBusy, isBusy: () => busy };
+  window.Cleaner = { renderGroups, renderRenames, reset, hashFile, selectFiles, chooseFolder, selectFolderFiles, scanSelected, scanCloud, getLocalFile: id => localFiles.get(id), download, setReviewBusy: setBusy, isBusy: () => busy };
   setBusy(false);
 })();
+

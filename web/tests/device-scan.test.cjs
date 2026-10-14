@@ -12,7 +12,7 @@ class Element {
   remove() {}
   setAttribute(name, value) { this[name] = value; }
 }
-function harness(apiImpl = async () => ({})) {
+function harness(apiImpl = async () => ({}), picker) {
   const elements = new Map();
   const document = { getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); }, createElement(tag) { return new Element(tag); }, body: new Element() };
   document.getElementById('device-folder').webkitdirectory = true;
@@ -20,6 +20,7 @@ function harness(apiImpl = async () => ({})) {
   const storage = new Map();
   const context = vm.createContext({ document, URLSearchParams, sessionStorage: {getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}, history:{replaceState(){}}, location:{origin:'https://cleaner.raven-sharp.com',pathname:'/app.html',hash:'',search:''}, crypto: webcrypto, Uint8Array, Map, Blob, FormData, AbortController, DOMException, Date, JSON, console, token: 'session', confirm: () => true, URL, setTimeout: () => {}, fmtBytes: n => String(n), toast: () => {}, loadStats: async () => {}, api: async (path, options = {}) => { calls.push({ path, options }); return apiImpl(path, options); } });
   context.window = context;
+  if (picker) context.showDirectoryPicker = picker;
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '..', 'device-scan.js'), 'utf8'), context);
   return { context, cleaner: context.Cleaner, calls, el: id => document.getElementById(id) };
 }
@@ -32,6 +33,51 @@ test('fingerprints cover the entire file, including bytes after 64KB', async () 
   const { cleaner } = harness(); const a = 'x'.repeat(65536);
   assert.notEqual(await cleaner.hashFile(file('a', a + '1')), await cleaner.hashFile(file('b', a + '2')));
   assert.equal(await cleaner.hashFile(file('empty', '')), createHash('sha256').update('').digest('hex'));
+});
+test('folder fallback accepts nested files but rejects a picker returning individual files', () => {
+  const h = harness();
+  h.cleaner.selectFolderFiles([file('one.txt', '1', 'Docs/nested/one.txt'), file('two.txt', '2', 'Docs/two.txt')]);
+  assert.match(h.el('selection-summary').textContent, /^2 files/);
+  h.cleaner.selectFolderFiles([file('unexpected.txt', '3')]);
+  assert.match(h.el('selection-summary').textContent, /^2 files/);
+  assert.match(h.el('device-status').textContent, /instead of a folder picker/);
+});
+test('photo folder adds media from subfolders and excludes documents', () => {
+  const h = harness();
+  h.cleaner.selectFolderFiles([file('a.jpg', '1', 'DCIM/Camera/a.jpg'), file('clip.mp4', '2', 'DCIM/clip.mp4'), file('notes.txt', '3', 'DCIM/notes.txt')], true);
+  assert.match(h.el('selection-summary').textContent, /^2 files/);
+});
+function directory(name, entries) {
+  return { name, kind: 'directory', async *values() { yield* entries; } };
+}
+function entry(name, content) {
+  return { name, kind: 'file', getFile: async () => file(name, content) };
+}
+test('native folder picker recursively scans files with distinct relative paths in read mode', async () => {
+  const h = harness(async () => ({duplicate_groups:[]}), async options => {
+    assert.equal(options.mode, 'read');
+    return directory('Docs', [entry('same.txt', 'a'), directory('nested', [entry('same.txt', 'a')])]);
+  });
+  await h.cleaner.chooseFolder();
+  assert.match(h.el('selection-summary').textContent, /^2 files/);
+  await h.cleaner.scanSelected();
+  const names = h.calls.filter(c => c.path === '/files/register').map(c => JSON.parse(c.options.body).items[0].name);
+  assert.deepEqual(names, ['Docs/same.txt', 'Docs/nested/same.txt']);
+});
+test('cancelled folder selection preserves previous selection and does not open a file fallback', async () => {
+  const h = harness(undefined, async () => { throw new DOMException('Cancelled', 'AbortError'); });
+  h.cleaner.selectFiles([file('existing.txt', 'a')]);
+  await h.cleaner.chooseFolder();
+  assert.match(h.el('selection-summary').textContent, /^1 files/);
+  assert.equal(h.cleaner.isBusy(), false);
+});
+test('logout during recursive folder reading discards late file results', async () => {
+  let finish; const pending = new Promise(resolve => finish = resolve);
+  const h = harness(undefined, async () => directory('Docs', [{name:'a.txt',kind:'file',getFile:()=>pending}]));
+  const task = h.cleaner.chooseFolder();
+  await new Promise(resolve => setImmediate(resolve));
+  h.cleaner.reset(); finish(file('a.txt', 'a')); await task;
+  assert.equal(h.el('selection-summary').textContent, 'No files selected.');
 });
 test('selection retains separate folder paths and avoids picking the same file twice', () => {
   const h = harness(); const a = file('a.txt', 'abc', 'one/a.txt'), b = file('a.txt', 'abc', 'two/a.txt');
@@ -168,3 +214,4 @@ test('basic duplicates exclude extra exact copies while keeping one for content 
  h.context.ContentCleanup.setFiles(files,[{kind:'exact_duplicate',keep_id:'a',files:files.slice(0,2)}]);
  assert.equal(h.el('content-candidates').children.length,2);
 });
+
