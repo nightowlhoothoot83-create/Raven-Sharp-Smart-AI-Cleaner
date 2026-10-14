@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI File Manager App | Raven Sharp</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05050d; --surface: #0e0e1f; --surface-hover: #171732; --border: #23234d;
+    --text: #f4f4ff; --muted: #9ba3d9; --dim: #6066a6;
+    --purple: #7c5cbf; --purple-glow: #a78bfa; --gold: #ffc857; --danger: #ff4d6d; --success: #34d399;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Outfit', system-ui, sans-serif; min-height: 100vh; }
+  .hidden { display: none !important; }
+  h1, h2, h3 { font-family: 'Cabinet Grotesk', 'Outfit', sans-serif; }
+  input, button, select { font-family: inherit; font-size: 0.95rem; }
+  input {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 11px 14px; border-radius: 10px; width: 100%; outline: none;
+  }
+  input:focus { border-color: var(--purple); }
+  button {
+    background: var(--purple); color: #fff; border: none; padding: 11px 20px;
+    border-radius: 10px; font-weight: 600; cursor: pointer; transition: background .2s;
+  }
+  button:hover { background: var(--purple-glow); }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.ghost:hover { border-color: var(--purple); background: var(--surface); }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  textarea {width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font:inherit;margin:10px 0;}
+  .review-choice {display:flex;gap:10px;align-items:center;margin:8px 0;overflow-wrap:anywhere;}
+  .review-choice input {width:20px;height:20px;flex-shrink:0;}
+  #content-candidates {max-height:260px;overflow:auto;margin:14px 0;}
+  .rename-editor {display:grid;gap:10px;margin:12px 0;}
+  .source-options { display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px; }
+  .source-option { border:1px solid var(--border);border-radius:12px;padding:16px; }
+  .source-option summary { cursor:pointer;font-weight:600; }
+  .source-account { display:flex;gap:12px;align-items:flex-start;min-width:0;overflow-wrap:anywhere; }
+  .source-account input { width:20px;height:20px;flex-shrink:0;margin-top:4px; }
+  .source-row { flex-wrap:wrap;gap:12px; }
+  #connect-type { width:100%;padding:11px 14px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--border); }
+  .scan-actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+  .scan-help { color:var(--muted); font-size:.88rem; line-height:1.6; margin:12px 0; }
+  .scan-consent { display:flex; gap:10px; align-items:flex-start; font-size:.88rem; line-height:1.5; }
+  .scan-consent input { width:20px; height:20px; flex-shrink:0; margin-top:2px; }
+  .selection-list { padding-left:24px; color:var(--muted); font-size:.85rem; overflow-wrap:anywhere; }
+  progress { width:100%; height:16px; margin-top:12px; accent-color:var(--purple-glow); }
+  .scan-errors { color:var(--danger); padding-left:20px; font-size:.85rem; overflow-wrap:anywhere; }
+  .file-item { gap:12px; flex-wrap:wrap; }
+  .file-item span:first-child { flex:1; min-width:140px; overflow-wrap:anywhere; }
+  .file-item.review { color:var(--text); }
+  .file-item button { padding:8px 12px; font-size:.8rem; }
+  .rename-row { padding:12px 0; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+  body:has(#app-screen.active) .rs-persistent-top { display:none; }
+  @media(max-width:560px) { main { padding:20px 12px 40px; } section.panel { padding:16px; } .scan-actions button { flex:1 1 140px; } nav.topbar { padding:10px 12px; } }
+
+  /* ── Auth screen ── */
+  #auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 28px; background:radial-gradient(circle at 20% 20%,rgba(124,92,191,.2),transparent 34%),radial-gradient(circle at 85% 20%,rgba(56,189,248,.12),transparent 30%); }
+  .auth-shell { width:min(980px,100%); display:grid; grid-template-columns:1.08fr .92fr; gap:28px; align-items:center; }
+  .auth-intro { padding:34px; }
+  .auth-intro .eyebrow { color:var(--gold); font:500 12px/1.4 'DM Mono',monospace; letter-spacing:.18em; text-transform:uppercase; }
+  .auth-intro h1 { font-size:clamp(2.6rem,6vw,4.5rem); line-height:.94; letter-spacing:-.055em; margin:16px 0 20px; }
+  .auth-intro h1 span { background:linear-gradient(90deg,var(--purple-glow),var(--gold),#38bdf8); background-clip:text; color:transparent; }
+  .auth-intro p { color:var(--muted); font-size:1.05rem; max-width:560px; }
+  .auth-benefits { display:grid; gap:10px; margin-top:24px; color:#c4c8ea; font-size:.9rem; }
+  .auth-links { margin-top:24px; display:flex; flex-wrap:wrap; gap:14px; font-size:.78rem; }
+  .auth-links a { color:var(--purple-glow); }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 36px; width: 100%; max-width: 380px; }
+  .auth-card img { width: 42px; height: 42px; border-radius: 10px; margin-bottom: 16px; }
+  .auth-card h1 { font-size: 1.5rem; margin-bottom: 6px; }
+  .auth-card p.sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 24px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+  .auth-toggle { text-align: center; margin-top: 18px; font-size: 0.85rem; color: var(--muted); }
+  .auth-toggle a { color: var(--purple-glow); cursor: pointer; text-decoration: underline; }
+  .error-msg { color: var(--danger); font-size: 0.85rem; margin-top: 10px; }
+  @media(max-width:760px){.auth-shell{grid-template-columns:1fr}.auth-intro{padding:12px 8px 0;text-align:center}.auth-benefits{display:none}.auth-links{justify-content:center}.auth-card{margin:auto}.auth-intro h1{font-size:2.8rem}}
+
+  /* ── App shell ── */
+  #app-screen { display: none; }
+  #app-screen.active { display: block; }
+  nav.topbar {
+    display: flex; align-items: center; justify-content: space-between; padding: 16px 24px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  nav.topbar .brand { display: flex; align-items: center; gap: 10px; }
+  nav.topbar .brand img { width: 30px; height: 30px; border-radius: 8px; }
+  nav.topbar .brand span { font-weight: 700; }
+  main { max-width: 1000px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .stat-card .num { font-family: 'Cabinet Grotesk', 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--purple-glow); }
+  .stat-card .label { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+
+  section.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; margin-bottom: 20px; }
+  section.panel h2 { font-size: 1.05rem; margin-bottom: 16px; }
+  .source-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .source-row:last-child { border-bottom: none; }
+  .source-row .meta { font-size: 0.88rem; color: var(--muted); }
+  .badge { display: inline-block; background: rgba(124,92,191,.15); color: var(--purple-glow); font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; margin-right: 8px; }
+
+  .group-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .group-card .kind { font-size: 0.72rem; color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+  .group-card .reason { color: var(--muted); font-size: 0.87rem; margin: 8px 0 12px; }
+  .file-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 0.88rem; }
+  .file-item.keep { color: var(--success); font-weight: 600; }
+  .file-item.discard { color: var(--dim); text-decoration: line-through; }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--dim); }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--purple); padding: 12px 22px; border-radius: 12px; font-size: 0.88rem; z-index: 999; }
+
+/* Persistent approved Raven Sharp shell */
+.rs-persistent-top{position:fixed;top:0;left:0;right:0;z-index:100;min-height:64px;display:flex;align-items:center;padding:0 max(16px,calc((100vw - 1120px)/2));gap:12px;background:rgba(8,8,16,.9);border-bottom:1px solid rgba(255,255,255,.08);backdrop-filter:blur(18px)}
+.rs-persistent-top img{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(124,92,191,.4))}
+.rs-persistent-brand{font-family:'Cabinet Grotesk','Outfit',sans-serif;font-size:18px;font-weight:800;line-height:1}
+.rs-persistent-brand strong{color:var(--purple-glow)}
+.rs-persistent-brand small{display:block;margin-top:4px;font:500 9px/1 'DM Mono',monospace;letter-spacing:.2em;color:#38bdf8;text-transform:uppercase}
+#auth-screen{padding-top:92px!important}
+nav.topbar{min-height:64px;padding:10px 24px;background:rgba(8,8,16,.94);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:30}
+nav.topbar .brand{display:flex;align-items:center;gap:12px}nav.topbar .brand img{width:44px;height:44px;border-radius:0;object-fit:contain;filter:drop-shadow(0 0 8px rgba(124,92,191,.4))}
+.rs-brand-lock{font-family:'Cabinet Grotesk','Outfit',sans-serif;font-size:18px;font-weight:800;letter-spacing:-.025em;line-height:1}.rs-brand-lock strong{color:var(--purple-glow)}.rs-brand-lock small{display:block;margin-top:4px;font:500 9px/1 'DM Mono',monospace;letter-spacing:.2em;text-transform:uppercase;color:#38bdf8}
+.rs-suite-link{margin-left:auto;color:var(--muted);text-decoration:none;font-size:12px;font-weight:700}.rs-suite-link:hover{color:#fff}.rs-top-actions{display:flex;align-items:center;gap:14px}@media(max-width:560px){.rs-suite-link{display:none}.rs-persistent-brand{font-size:16px}.rs-persistent-top{padding-left:12px}.auth-card{padding:26px}}
+</style>
+</head>
+<body>
+<header class="rs-persistent-top"><img src="/brands/ravenSharpLogo.png" alt="Raven Sharp"><div class="rs-persistent-brand">RAVEN <strong>SHARP</strong><small>AI File Manager</small></div></header>
+<details style="max-width:1100px;margin:16px auto;padding:16px;border:1px solid var(--border);border-radius:12px">
+  <summary>Connection check — test what is ready</summary>
+  <p class="scan-help">Check the file service and content review before starting. This check does not change your files.</p>
+  <button id="check-connections" type="button" class="ghost">Check connections</button>
+  <p id="connection-check-result" class="scan-help" role="status" aria-live="polite">Run a check to see current availability.</p>
+</details>
+
+<!-- ═══ AUTH SCREEN ═══ -->
+<div id="auth-screen">
+  <div class="auth-shell">
+  <section class="auth-intro" aria-labelledby="cleaner-auth-heading">
+    <span class="eyebrow">Raven Sharp AI File Manager</span>
+    <h1 id="cleaner-auth-heading">Compare content.<br><span>Keep the right version.</span></h1>
+    <p>Compare file content and versions, review duplicates and partial drafts, and get meaningful filename suggestions. Review every recommendation before deciding what to keep.</p>
+    <div class="auth-benefits"><span>✓ Content, similarity and draft comparison</span><span>✓ Quality and version comparison</span><span>✓ Review recommendations before cleanup</span></div>
+    <nav class="auth-links" aria-label="Product and legal links"><a href="/">Features &amp; pricing</a><a href="/legal/privacy">Privacy</a><a href="/legal/terms">Terms</a><a href="/legal/cookies">Cookies</a><a href="https://raven-sharp.com">Raven Sharp suite</a></nav>
+  </section>
+  <div class="auth-card">
+    <img src="/brands/ravenSharpLogo.png" alt="Raven Sharp">
+    <h1 id="auth-title">Welcome back</h1>
+    <p class="sub" id="auth-sub">Log in to AI File Manager</p>
+
+    <div class="field" id="name-field" style="display:none">
+      <label>Full name</label>
+      <input type="text" id="signup-name" placeholder="Your name">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="you@example.com">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="auth-password" placeholder="••••••••">
+    </div>
+    <button id="auth-submit" style="width:100%">Log In</button>
+    <p class="error-msg hidden" id="auth-error"></p>
+    <p class="auth-toggle">
+      <span id="toggle-to-signup">Don't have an account? <a onclick="setAuthMode('signup')">Sign up</a></span>
+      <span id="toggle-to-login" class="hidden">Already have an account? <a onclick="setAuthMode('login')">Log in</a></span>
+    </p>
+  </div>
+  </div>
+</div>
+
+<!-- ═══ APP SCREEN ═══ -->
+<div id="app-screen">
+  <nav class="topbar">
+    <div class="brand"><img src="/brands/ravenSharpLogo.png" alt="Raven Sharp"><div class="rs-brand-lock">RAVEN <strong>SHARP</strong><small>AI File Manager</small></div></div>
+    <div class="rs-top-actions"><a class="rs-suite-link" href="https://raven-sharp.com">Raven Sharp Suite</a><button class="ghost" onclick="logout()">Log Out</button></div>
+  </nav>
+
+  <main>
+    <div class="stat-grid" id="stats-grid"></div>
+
+    <section class="panel" aria-labelledby="source-heading">
+      <h2 id="source-heading">Your file sources</h2>
+      <p class="scan-help">Add device files or connect cloud accounts, then choose what to compare.</p>
+      <div class="source-options">
+        <details class="source-option"><summary>Add device source</summary>
+          <p class="scan-help">Choose only the files you want to scan. Folder access depends on your browser.</p>
+          <div class="scan-actions">
+            <button onclick="document.getElementById('choose-photos').click()">Gallery / photos</button>
+            <button onclick="document.getElementById('choose-folder').click()">Downloads / Pictures / Documents folder</button>
+            <button onclick="document.getElementById('choose-files').click()">Choose any files</button>
+          </div>
+        </details>
+        <details class="source-option"><summary>Connect cloud source</summary>
+          <div class="scan-actions">
+            <button onclick="connectGoogleDrive()">Google Drive</button>
+            <button onclick="connectDropbox()">Dropbox</button>
+          </div>
+          <p class="scan-help">Provider sign-in requires configured OAuth client IDs. If setup is missing, the dashboard shows the advanced token option.</p>
+          <div class="scan-actions"><button disabled>OneDrive — not available yet</button><button disabled>Google Photos — not available yet</button></div>
+          <button class="ghost" onclick="showConnectForm('gdrive')">Advanced: connect with access token</button>
+        </details>
+      </div>
+      <p id="connection-status" class="scan-help" role="status" aria-live="polite"></p>
+      <h3>Connected cloud accounts</h3>
+      <div id="sources-list"></div>
+      <button class="ghost" onclick="loadSources()">Refresh connections</button>
+      <div id="connect-form" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <p class="scan-help">Advanced connection: enter a provider access token. The backend validates it before saving the connection. Never enter your password here.</p>
+        <div class="field"><label for="connect-type">Provider</label><select id="connect-type"><option value="gdrive">Google Drive</option><option value="dropbox">Dropbox</option></select></div>
+        <div class="field"><label for="connect-token">Access token</label><input type="password" id="connect-token" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label for="connect-label">Account label</label><input type="text" id="connect-label" placeholder="My Work Drive"></div>
+        <button onclick="submitConnect()">Validate &amp; connect</button><button class="ghost" onclick="hideConnectForm()">Cancel</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Scan files from this device</h2>
+      <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">
+        On your PC or phone, choose files, photos or a folder such as Downloads, Documents or Pictures. Only your selection is scanned.
+      </p>
+      <div class="scan-actions">
+        <button id="choose-files" type="button">Choose files</button>
+        <button id="choose-photos" type="button">Choose photos &amp; videos</button>
+        <button id="choose-folder" type="button" class="ghost">Choose folder</button>
+      </div>
+      <input id="device-files" type="file" multiple hidden>
+      <input id="device-photos" type="file" multiple accept="image/*,video/*" hidden>
+      <input id="device-folder" type="file" multiple webkitdirectory hidden>
+      <p id="folder-help" class="scan-help">Folder selection depends on your browser. If it is unavailable on your phone, use Choose files or Choose photos &amp; videos. Files over 128 MB are skipped to protect browser memory.</p>
+      <label class="scan-consent"><input id="content-analysis" type="checkbox"> Include content analysis: send selected files up to 25 MB each for document text and photo similarity analysis. Larger files use exact matching only.</label>
+      <p class="scan-help">By default, file contents stay on your device. File names, sizes and full-file fingerprints are sent to your account for exact matching. Scanning never deletes or renames your originals.</p>
+      <p class="scan-help">Basic scanning finds fingerprint matches and related candidates first. Use the second-stage content cleanup below to inspect image previews, PDF pages and document excerpts with Claude.</p>
+      <p id="selection-summary" class="scan-help">No files selected.</p>
+      <ol id="selection-list" class="selection-list"></ol>
+      <div class="scan-actions">
+        <button id="device-scan-btn" type="button" disabled>Scan selected files</button>
+        <button id="cancel-scan" type="button" class="ghost hidden">Stop scan</button>
+        <button id="clear-selection" type="button" class="ghost" disabled>Clear selection</button>
+      </div>
+      <progress id="device-progress" value="0" max="1" class="hidden"></progress>
+      <p id="device-status" role="status" aria-live="polite" class="scan-help"></p>
+      <ul id="scan-errors" class="scan-errors"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Scan connected cloud sources</h2>
+      <p class="scan-help">Scan connected Google Drive and Dropbox accounts, then review matching files alongside your device scans.</p>
+      <p id="cloud-selection-summary" class="scan-help">No cloud accounts selected.</p>
+      <button id="scan-btn" onclick="runScan()">Scan selected cloud accounts</button>
+      <span id="scan-status" style="margin-left:12px;color:var(--muted);font-size:0.88rem"></span>
+    </section>
+
+    <section class="panel">
+      <h2>File matches &amp; version recommendations</h2>
+      <p class="scan-help">First find fingerprint matches and related documents or photos, then inspect candidate content for keep recommendations. For cases such as Totalspan, review possible revisions and partial drafts together; similar names alone do not prove identical content or which version you need.</p>
+      <p class="scan-help">Recommendations are for review. For device files, remove an original using your device's file manager. Removing a scan record here does not free device storage.</p>
+      <div id="groups-list"><div class="empty-state">Run a scan to find duplicates.</div></div>
+      <button id="export-report" class="ghost" type="button" disabled>Download review report</button>
+    </section>
+    <section class="panel" aria-labelledby="content-heading">
+      <h2 id="content-heading">2. Content cleanup with Claude</h2>
+      <p class="scan-help">After basic matching, inspect selected images, screenshots, PDF pages and document text. Review possible blurry images, redundant screenshots, partial drafts, earlier versions and outdated details. Recommendations do not mean a file is definitely unwanted.</p>
+      <label for="review-context">What should be kept? What is no longer relevant?</label>
+      <textarea id="review-context" maxlength="2000" rows="3" placeholder="Example: Totalspan project — keep signed plans, the latest complete revision and anything with unique information. Flag earlier drafts for review."></textarea>
+      <p class="scan-help">Give context for relevance. Old dates or blurry images alone cannot establish that a file is unnecessary. Up to 12 files per review; image previews and PDFs up to 2 MB each, PDFs up to 30 pages. Larger or unreadable files may have only an extracted-text excerpt or no content coverage.</p>
+      <div id="content-candidates"><p class="scan-help">Run the basic scan first.</p></div>
+      <p id="review-count" class="scan-help"></p>
+      <label class="scan-consent"><input id="review-consent" type="checkbox"> I approve sending selected content previews and document excerpts to Claude for this review. No cleanup actions will run automatically.</label>
+      <button id="content-review-btn" disabled>Review selected content with Claude</button>
+      <p id="content-review-status" class="scan-help" role="status" aria-live="polite"></p>
+      <div id="content-results"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Filename suggestions</h2>
+      <p class="scan-help">Review suggested names. For a file selected in this session, you can download a renamed copy; your original stays unchanged.</p>
+      <div id="rename-list"><p class="scan-help">Suggestions appear after a scan when available.</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/device-scan.js"></script>
+<script src="/source-dashboard.js"></script>
+<script src="/content-cleanup.js"></script>
+<script src="/connection-check.js" defer></script>
+<script>
+const API_BASE = window.SMART_CLEANER_API_URL ? window.SMART_CLEANER_API_URL.replace(/\/$/, "") + "/api" : "/api";
+let authMode = "login";
+let token = localStorage.getItem("sc_token");
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 3500);
+}
+
+async function api(path, opts = {}) {
+  const headers = { ...(opts.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...(opts.headers || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+  if (res.status === 401) { logout(); throw new Error("Session expired — please log in again"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  return data;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  document.getElementById("auth-title").textContent = mode === "login" ? "Welcome back" : "Create your account";
+  document.getElementById("auth-sub").textContent = mode === "login" ? "Log in to AI File Manager" : "Get started with AI File Manager";
+  document.getElementById("auth-submit").textContent = mode === "login" ? "Log In" : "Sign Up";
+  document.getElementById("name-field").style.display = mode === "signup" ? "block" : "none";
+  document.getElementById("toggle-to-signup").classList.toggle("hidden", mode === "signup");
+  document.getElementById("toggle-to-login").classList.toggle("hidden", mode === "login");
+  document.getElementById("auth-error").classList.add("hidden");
+}
+
+document.getElementById("auth-submit").addEventListener("click", async () => {
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const errorEl = document.getElementById("auth-error");
+  errorEl.classList.add("hidden");
+  try {
+    let data;
+    if (authMode === "login") {
+      data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    } else {
+      const full_name = document.getElementById("signup-name").value.trim();
+      data = await api("/auth/signup", { method: "POST", body: JSON.stringify({ email, password, full_name }) });
+    }
+    token = data.access_token;
+    localStorage.setItem("sc_token", token);
+    showApp();
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.classList.remove("hidden");
+  }
+});
+
+function logout() {
+  Cleaner.reset();
+  SourceDashboard.reset();
+  token = null;
+  localStorage.removeItem("sc_token");
+  document.getElementById("app-screen").classList.remove("active");
+  document.getElementById("auth-screen").style.display = "flex";
+}
+
+async function showApp() {
+  document.getElementById("auth-screen").style.display = "none";
+  document.getElementById("app-screen").classList.add("active");
+  await Promise.all([loadStats(), loadSources()]);
+}
+
+async function loadStats() {
+  try {
+    const s = await api("/dashboard/stats");
+    document.getElementById("stats-grid").innerHTML = `
+      <div class="stat-card"><div class="num">${s.total_files}</div><div class="label">Total Files</div></div>
+      <div class="stat-card"><div class="num">${s.sources_count}</div><div class="label">Connected Sources</div></div>
+      <div class="stat-card"><div class="num">${s.duplicate_groups_count}</div><div class="label">File Match Groups</div></div>
+      <div class="stat-card"><div class="num">${fmtBytes(s.space_recoverable)}</div><div class="label">Recoverable Space</div></div>
+    `;
+  } catch (e) { toast(e.message); }
+}
+
+function fmtBytes(n) {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(1)} ${units[i]}`;
+}
+
+function connectGoogleDrive() { SourceDashboard.connect("gdrive"); }
+function connectDropbox() { SourceDashboard.connect("dropbox"); }
+async function handleOAuthCallback() { await SourceDashboard.callback(); }
+function showConnectForm(type) { SourceDashboard.showManual(type); }
+function hideConnectForm() { SourceDashboard.hideManual(); }
+async function submitConnect() {
+  await SourceDashboard.save(document.getElementById("connect-type").value, document.getElementById("connect-token").value, document.getElementById("connect-label").value);
+}
+async function loadSources() { await SourceDashboard.load(); }
+
+async function runScan() { await Cleaner.scanCloud(); }
+
+function renderGroups(groups) { Cleaner.renderGroups(groups); }
+
+// Restore session on load, then process any OAuth redirect callback
+if (token) { showApp().then(handleOAuthCallback); } else { setAuthMode("login"); handleOAuthCallback(); }
+</script>
+</body>
+</html>
+
+
