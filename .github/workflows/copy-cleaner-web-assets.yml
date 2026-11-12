@@ -20,9 +20,14 @@ jobs:
           set -euo pipefail
           mkdir -p web/brands
           for name in adgDownloads.png myCalcTools.png ravenCentre-v2.png ravenCentre.png ravenSharpLogo.png spewCrew.png wheelNamePicker.png; do
-            curl --fail --location --retry 3 --silent --show-error "https://raw.githubusercontent.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web/main/brands/$name" -o "web/brands/$name"
+            curl --fail --location --retry 3 --silent --show-error "https://raw.githubusercontent.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web/0d0233ab0f3deb4d15d975613da99d7ad34c21d6/brands/$name" -o "web/brands/$name"
             test -s "web/brands/$name"
           done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test consolidated web interface offline
+        run: node --test web/tests/*.test.cjs
       - name: Commit assets on migration branch only
         run: |
           git config user.name "github-actions[bot]"

@@ -1,11 +1,9 @@
-# Raven Sharp AI File Manager — Web
+# Smart Cleaner web interface
 
-This is the **only active user interface**. Finish, deploy and test the web product before starting a native phone app. It works in a browser on phones and PCs and is hosted on Cloudflare Pages at cleaner.raven-sharp.com.
+This folder is the canonical active browser UI within Raven-Sharp-Smart-AI-Cleaner. The old separate web repository remains preserved while the hosting cutover is pending. `frontend/` is a paused Expo prototype, not the web app.
 
-## Shared backend
+Cloudflare Pages: output directory `web`, no build command. Keep the existing `_worker.js` proxy, `_headers`, `_redirects`, API health routes, legal pages and all seven `brands/` images.
 
-The Python backend is in [Raven-Sharp-Smart-AI-Cleaner](https://github.com/nightowlhoothoot83-create/Raven-Sharp-Smart-AI-Cleaner), under `backend/`, and runs on Railway. Its API base is `https://raven-sharp-smart-ai-cleaner-production.up.railway.app/api`.
+Railway: retain the existing backend service, source repository and Dockerfile. API origin stays https://raven-sharp-smart-ai-cleaner-production.up.railway.app/api. Do not point Railway at web/ or add a second backend.
 
-The old Android prototype in that repository's `frontend/` folder is paused and is not part of the web release.
-
-The expanded source dashboard and content review implementation is tracked in [PR #8](https://github.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web/pull/8). Source changes must be deployed and verified before the release is described as live.
+Before production switch: verify a preview, login, folder selection, basic-only scan, OAuth source selection, logout and no unexpected file mutation. Paid content review and renaming/deletion require separate approval. Run `node --test web/tests/*.test.cjs` (26 offline tests pass). Tests do not establish live OAuth or correct Cloudflare routing.
