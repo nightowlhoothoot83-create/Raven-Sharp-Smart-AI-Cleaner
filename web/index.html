@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raven Sharp AI File Manager | Content & Version Comparison</title>
+<meta name="description" content="AI File Manager finds duplicate files and photos by actually looking inside them — not just matching filenames. Connects to Google Drive, Dropbox, and your device.">
+<link rel="canonical" href="https://cleaner.raven-sharp.com/">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05050d; --surface: #0e0e1f; --surface-hover: #171732;
+    --border: #23234d; --text: #f4f4ff; --muted: #9ba3d9; --dim: #6066a6;
+    --purple: #7c5cbf; --purple-glow: #a78bfa; --gold: #ffc857; --blue: #38bdf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(ellipse at top, #0d0a1a 0%, #05050d 60%);
+    color: var(--text); font-family: 'Outfit', system-ui, sans-serif;
+    min-height: 100vh; line-height: 1.6;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+  header { min-height:64px; padding:0; display:flex; align-items:center; gap:14px; }
+  header img { width:44px; height:44px; border-radius:0; object-fit:contain; filter:drop-shadow(0 0 8px rgba(124,92,191,.4)); }
+  header span { font-family:'Cabinet Grotesk','Outfit',sans-serif; font-weight:800; color:var(--text); font-size:18px; letter-spacing:-.025em; line-height:1; }
+  header span strong{color:var(--purple-glow)}
+  header a { text-decoration: none; display: flex; align-items: center; gap: 12px; }
+  header nav { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  header nav a { color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: .86rem; font-weight: 700; }
+  header nav a:last-child { border: 0; background: linear-gradient(135deg,var(--purple),var(--blue)); }
+  .rs-centre-raven{text-align:center;padding:16px 0 0}.rs-centre-raven img{width:208px;height:208px;object-fit:contain;filter:drop-shadow(0 0 34px rgba(124,92,191,.45))}
+  body{background:#080810}
+
+  .hero { text-align: center; padding: 56px 0 40px; }
+  .hero .badge {
+    display: inline-block; background: rgba(255,200,87,.08); border: 1px solid rgba(255,200,87,.28);
+    color: var(--gold); font-size: 0.78rem; font-weight: 600; padding: 6px 14px;
+    border-radius: 999px; margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-family:'Cabinet Grotesk','Outfit',system-ui,sans-serif;font-weight:800;
+    font-size:clamp(42px,6vw,72px);letter-spacing:-.05em;line-height:1;
+  }
+  .hero h1 span { background: linear-gradient(90deg, var(--purple-glow), var(--blue)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.lead { color: var(--muted); font-size: 1.1rem; max-width: 560px; margin: 20px auto 0; }
+  .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
+  .btn {
+    padding: 13px 26px; border-radius: 12px; font-weight: 700; font-size: 0.95rem;
+    text-decoration: none; display: inline-block;
+  }
+  .btn-primary { background: linear-gradient(135deg, var(--purple), var(--blue)); color: #fff; box-shadow: 0 6px 20px rgba(124,92,191,.3), 0 0 24px rgba(56,189,248,.12); }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 8px 26px rgba(124,92,191,.4), 0 0 36px rgba(56,189,248,.2); }
+  .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--purple); }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 50px 0; }
+  .feature { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; transition: all 0.25s ease; }
+  .feature:hover { border-color: rgba(124,92,191,0.45); box-shadow: 0 14px 34px rgba(124,92,191,0.16); transform: translateY(-2px); }
+  .feature .icon { font-size: 1.5rem; margin-bottom: 10px; display: block; }
+  .feature h3 { font-family: 'Cabinet Grotesk', 'Outfit', sans-serif; font-size: 1.02rem; font-weight: 700; margin-bottom: 6px; }
+  .feature p { color: var(--muted); font-size: 0.88rem; }
+
+  .sources { text-align: center; padding: 20px 0 60px; }
+  .sources h2 { font-family: 'Cabinet Grotesk', 'Outfit', sans-serif; font-size: 1.3rem; margin-bottom: 20px; }
+  .source-pills { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .pill { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 8px 18px; font-size: 0.88rem; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0; text-align: center; color: var(--dim); font-size: 0.85rem; }
+  footer a { color: var(--muted); text-decoration: underline; margin: 0 8px; }
+
+.adg-ecosystem-footer{margin-top:56px;padding:36px 20px 24px;background:#05070d;border-top:1px solid rgba(255,255,255,.1);color:#aab1c5;text-align:center}
+.adg-ecosystem-footer h2{margin:0 0 6px;color:#fff;font-size:18px}.adg-ecosystem-footer>p{margin:0 0 22px;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.adg-brand-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;max-width:900px;margin:0 auto 24px}
+.adg-brand-grid a{width:92px;color:#aab1c5;text-decoration:none;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:7px}
+.adg-brand-grid img{width:58px;height:58px;object-fit:contain;border-radius:10px;background:#000}.adg-brand-grid a:hover{color:#fff}
+.adg-footer-copy{padding-top:18px;border-top:1px solid rgba(255,255,255,.08);font-size:12px}
+.adg-logo{height:40px;width:auto;object-fit:contain;margin:0 auto 10px}.footer-suite,.footer-legal{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin:20px auto;color:var(--muted);font-size:12px}.footer-suite a,.footer-legal a{color:var(--muted);text-decoration:none}.footer-suite a:first-child{color:var(--purple-glow)}.adg-brand-grid img{width:40px;height:40px}.adg-footer-copy{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;font:500 10px/1.5 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.12em}.adg-footer-copy img{width:24px;height:24px;object-fit:contain}
+.output-preview{display:grid;grid-template-columns:1.05fr .95fr;gap:28px;align-items:center;padding:64px 0}.cleaner-ui{background:#090917;border:1px solid var(--border);border-radius:22px;padding:18px;box-shadow:0 28px 70px rgba(0,0,0,.45)}.cleaner-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border)}.file-thumb{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--purple),var(--blue));display:grid;place-items:center}.keep{color:#4ade80;font-size:12px}.remove{color:#fda4af;font-size:12px}.pricing{padding:60px 0}.pricing h2,.output-preview h2{text-align:center;font-size:clamp(2rem,4vw,3rem);margin:0 0 12px}.output-preview h2{text-align:left}.pricing-intro{text-align:center;color:var(--muted);margin:0 auto 28px}.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.plan{background:linear-gradient(145deg,var(--surface-hover),var(--surface));border:1px solid var(--border);border-radius:20px;padding:24px;display:flex;flex-direction:column}.plan.popular{border-color:var(--purple-glow);transform:translateY(-7px)}.plan .price{font-size:2.5rem;font-weight:900;margin:8px 0}.plan .price small{font-size:.85rem;color:var(--muted);font-weight:500}.plan ul{list-style:none;padding:0;flex:1}.plan li{color:var(--muted);padding:7px 0;border-bottom:1px solid var(--border);font-size:.88rem}.plan li:before{content:'✓';color:#4ade80;margin-right:8px}.plan .btn{margin-top:18px;text-align:center}@media(max-width:760px){.output-preview,.plans{grid-template-columns:1fr}.plan.popular{transform:none}}
+
+</style>
+<meta property="og:title" content="AI File Manager | Raven Sharp"><meta property="og:description" content="Compare content and related versions, review duplicates and possible older or incomplete drafts, and get useful filename suggestions."><meta property="og:url" content="https://cleaner.raven-sharp.com/"><meta property="og:type" content="website"><style>.raven-public-info{max-width:1100px;margin:32px auto 0;padding:56px 24px;color:#f4f4ff}.raven-public-info>h2{text-align:center;font-family:'Cabinet Grotesk','Outfit',sans-serif;font-size:clamp(2rem,4vw,3rem);margin:0 0 16px}.raven-public-info>p{max-width:760px;margin:0 auto 32px;text-align:center;color:#9ba3d9}.raven-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}.raven-info-grid article,.raven-faq{background:linear-gradient(145deg,rgba(23,23,50,.95),rgba(14,14,31,.95));border:1px solid rgba(167,139,250,.24);border-radius:18px;padding:24px;box-shadow:0 16px 38px rgba(56,189,248,.07)}.raven-info-grid h2,.raven-faq h2{font-size:1.2rem;color:#ffc857;margin:0 0 12px}.raven-info-grid li{margin:.55rem 0;color:#c4c8ea}.raven-faq{margin-top:18px}.raven-faq h3{font-size:1rem;color:#a78bfa;margin:18px 0 5px}.raven-faq p{color:#c4c8ea}.raven-suite-links,.raven-legal-links{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:24px}.raven-suite-links a,.raven-legal-links a{color:#f4f4ff;text-decoration:none;border:1px solid rgba(167,139,250,.3);border-radius:999px;padding:8px 14px;background:rgba(124,92,191,.1)}</style></head>
+<body>
+
+<div class="container">
+  <header>
+    <a href="https://raven-sharp.com">
+      <img src="/brands/ravenSharpLogo.png" alt="Raven Sharp">
+      <span>RAVEN <strong>SHARP</strong><small style="display:block;margin-top:3px;color:var(--blue);font:500 9px/1 'DM Mono',monospace;letter-spacing:.2em;text-transform:uppercase">AI File Manager</small></span>
+    </a><nav aria-label="Account"><a href="/app.html#login">Sign In</a><a href="/app.html#register">Get Started</a></nav>
+  </header>
+
+  <div class="rs-centre-raven" aria-hidden="true"><img src="/brands/ravenCentre-v2.png" alt=""></div>
+
+  <section class="hero">
+    <span class="badge">✦ Part of the Raven Sharp suite</span>
+    <h1>Compare file content.<br><span>Clear the clutter.</span></h1>
+    <p class="lead">Compare content and versions, review duplicates and possible older or partial drafts, get recommendations on what to keep, and turn generic filenames into meaningful names.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/app.html">Try it in your browser</a>
+      <a class="btn btn-ghost" href="https://raven-sharp.com">Explore the Suite</a>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feature">
+      <span class="icon">🔍</span>
+      <h3>Reads content, not just names</h3>
+      <p>Finds duplicate photos even when resized or recompressed, and near-identical drafts of documents — not just exact filename matches.</p>
+    </div>
+    <div class="feature">
+      <span class="icon">🤖</span>
+      <h3>Recommendations on what to keep</h3>
+      <p>Claude Vision can compare connected cloud images, while Claude compares extracted document text. When content inspection is unavailable, recommendations use other file details; review the evidence before deciding.</p>
+    </div>
+    <div class="feature">
+      <span class="icon">✏️</span>
+      <h3>Fixes bad filenames too</h3>
+      <p>"IMG_4821.jpg" becomes a real, descriptive name based on what's actually in the photo or document.</p>
+    </div>
+    <div class="feature">
+      <span class="icon">🗂️</span>
+      <h3>One place for everything</h3>
+      <p>Scan Google Drive, Dropbox, and your device's photos and files together, instead of cleaning each source separately.</p>
+    </div>
+  </section>
+
+  <section class="sources">
+    <h2>Connects to where your files actually live</h2>
+    <div class="source-pills">
+      <span class="pill">Google Drive</span>
+      <span class="pill">Dropbox</span>
+      <span class="pill">Device Photos</span>
+      <span class="pill">Device Files</span>
+    </div>
+  </section>
+
+<section class="output-preview" aria-labelledby="cleaner-output-title"><figure class="cleaner-ui" style="margin:0;padding:12px"><img src="/product-preview.svg" alt="AI File Manager duplicate review comparing file quality before an approved cleanup action" style="display:block;width:100%;height:auto;border-radius:14px"><figcaption style="position:absolute;left:-9999px">Illustrative example of the review-before-cleanup workflow.</figcaption></figure><div><span class="badge">EXAMPLE OUTPUT</span><h2 id="cleaner-output-title">See the best copy before anything changes.</h2><p class="lead" style="margin:0">AI File Manager groups matching content, explains which file is strongest and suggests clearer names. Review every suggestion; device originals stay unchanged.</p></div></section>
+
+  <section id="pricing" class="pricing"><h2>Simple plans for cleaner storage.</h2><p class="pricing-intro">Prices in AUD. Start free, cancel anytime and keep final control over every action.</p><div class="plans" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));max-width:760px;margin:auto"><article class="plan"><span class="badge">FREE</span><div class="price">$0</div><p>For a first cleanup.</p><ul><li>1 connected source</li><li>500 files scanned/month</li><li>Exact duplicate matching</li><li>Manual review queue</li></ul><a class="btn btn-ghost" href="/app.html#register">Start free</a></article><article class="plan popular"><span class="badge">PRO · POPULAR</span><div class="price">$9<small>/month</small></div><p>For ongoing personal cleanup.</p><ul><li>4 connected sources</li><li>25,000 files scanned/month</li><li>Visual near-duplicate detection</li><li>AI best-version recommendations</li><li>Smart filename suggestions</li></ul><a class="btn btn-primary" href="/app.html#register">Choose Pro</a></article></div></section>
+
+  <section id="get-app" class="hero" style="padding:20px 0 70px">
+    <h2 style="font-size:1.8rem">Get AI File Manager</h2>
+    <p class="lead">Use the web app on your PC or phone. Choose files, photos or a supported folder in your browser.</p><div class="cta-row"><a class="btn btn-primary" href="/app.html">Open AI File Manager</a></div>
+  </section>
+
+  
+
+<section class="raven-public-info" aria-labelledby="raven-info-title"><h2 id="raven-info-title">AI File Manager: a clear, guided workflow</h2><p>Find duplicate and near-duplicate files by content, compare versions safely and keep the strongest copy with the user in control.</p><div class="raven-info-grid"><article><h2>How it works</h2><ol><li>Choose a supported file source.</li><li>Compare duplicates, similar files and related versions or drafts.</li><li>Review every recommendation before removing or renaming anything.</li></ol></article><article><h2>Popular use cases</h2><ul><li>Cleaning duplicate photo libraries</li><li>Comparing older and partial document drafts</li><li>Finding repeated cloud documents</li><li>Renaming unclear files with useful descriptions</li></ul></article><article><h2>Plans and pricing</h2><p>Free browser access and Pro at A$9/month. Start free and upgrade only when it suits your workflow.</p></article></div><article class="raven-faq"><h2>Frequently asked questions</h2><h3>Can I try it before paying?</h3><p>Yes. A free option is available so you can explore the workflow first.</p><h3>Does it act without my review?</h3><p>No. Important output and account actions remain under your control.</p><h3>How does it connect with Raven Sharp?</h3><p>It is one of six focused Raven Sharp tools, linked below.</p></article><nav class="raven-suite-links" aria-label="Explore the Raven Sharp suite"><a href="https://raven-sharp.com">Raven Sharp Home</a><a href="https://pod.raven-sharp.com">POD Automation</a><a href="https://opt.raven-sharp.com">Image Optimiser</a><a href="https://books.raven-sharp.com">Book Creator</a><a href="https://content.raven-sharp.com">Content Creator</a><a href="https://ads.raven-sharp.com">Ad Manager</a><a href="https://cleaner.raven-sharp.com">AI File Manager</a></nav><nav class="raven-legal-links" aria-label="Legal information"><a href="/legal/privacy">Privacy Policy</a><a href="/legal/terms">Terms of Service</a><a href="/legal/cookies">Cookie Policy</a></nav></section><footer class="adg-ecosystem-footer">
+  <img class="adg-logo" src="https://ravensharppod.pages.dev/brands/ascensionDigital.png" alt="Ascension Digital Group">
+  <p>Elevating Your Digital Future</p>
+  <nav class="footer-suite" aria-label="Raven Sharp suite"><a href="https://raven-sharp.com">Raven Sharp Home</a><a href="https://pod.raven-sharp.com">POD Automation</a><a href="https://opt.raven-sharp.com">Image Optimiser</a><a href="https://books.raven-sharp.com">Book Creator</a><a href="https://content.raven-sharp.com">Content Creator</a><a href="https://ads.raven-sharp.com">Ad Manager</a><a href="https://cleaner.raven-sharp.com">AI File Manager</a></nav>
+  <div class="adg-brand-grid">
+    <a href="https://mystical-moments.net"><img src="https://ravensharppod.pages.dev/brands/mysticalMoments.png" alt="Mystical Moments"><span>Mystical Moments</span></a>
+    <a href="https://www.etsy.com/shop/ZyiaCreations"><img src="https://ravensharppod.pages.dev/brands/zyiaCreations.png" alt="Zyia Creations"><span>Zyia Creations</span></a>
+    <a href="https://youtube.com/@spewcrewkids"><img src="https://ravensharppod.pages.dev/brands/spewCrew.png" alt="Spew Crew Kids"><span>Spew Crew Kids</span></a>
+    <a href="https://www.facebook.com/feedthefeed"><img src="https://ravensharppod.pages.dev/brands/feedTheFeed.png" alt="Feed The Feed"><span>Feed The Feed</span></a>
+    <a href="https://mycalctools.net"><img src="https://ravensharppod.pages.dev/brands/myCalcTools.png" alt="MyCalcTools"><span>MyCalcTools</span></a>
+    <a href="https://mycalendartools.net"><img src="https://ravensharppod.pages.dev/brands/myCalendarTools.png" alt="MyCalendarTools"><span>MyCalendarTools</span></a>
+    <a href="https://wheelnamepicker.com.au"><img src="https://ravensharppod.pages.dev/brands/wheelNamePicker.png" alt="Wheel Name Picker"><span>Wheel Name Picker</span></a>
+    <a href="https://ascensiondigitalgroup.com"><img src="https://ravensharppod.pages.dev/brands/adgDownloads.png" alt="ADG Downloads"><span>ADG Downloads</span></a>
+  </div>
+  <nav class="footer-legal" aria-label="Legal"><a href="/legal/privacy">Privacy Policy</a><a href="/legal/terms">Terms of Service</a><a href="/legal/cookies">Cookie Policy</a><a href="mailto:ascensiondigitalagency@outlook.com">Support</a></nav>
+  <div class="adg-footer-copy"><img src="/brands/ravenSharpLogo.png" alt="">Raven Sharp AI File Manager · © 2026 Ascension Digital Group</div>
+</footer>
+</div>
+
+</body>
+</html>
+

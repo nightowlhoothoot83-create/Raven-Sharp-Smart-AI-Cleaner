@@ -1,15 +1,11 @@
-# Raven Sharp AI File Manager — Shared API
+# Raven Sharp Smart Cleaner — web and shared API
 
-The active product is the **Web app**, usable in a browser on phones and PCs. Finish, deploy and test that version first.
+The canonical product source is this repository. `web/` is the active phone/PC browser interface; `backend/` is the existing Railway API. `frontend/` is a paused Expo prototype and is retained.
 
-## Active backend
+Cloudflare Pages must use `web/` as its output directory when the approved consolidation is released. Railway continues to build the root Dockerfile and deploy the existing backend; do not create another service. The separate Raven-Sharp-Smart-Cleaner-Web repository and its current deployment remain intact until the consolidated preview and production cutover are verified.
 
-`backend/` contains the Shared API deployed on Railway. Both the current web interface and any future phone app can use it. Railway should deploy this repository's `main` branch.
+The web API proxy forwards only to the existing Railway backend. The account has cleaner.raven-sharp.com attached in Railway as well; check Cloudflare DNS/Pages routing before changing domains.
 
-The web interface lives in [Raven-Sharp-Smart-Cleaner-Web](https://github.com/nightowlhoothoot83-create/Raven-Sharp-Smart-Cleaner-Web) and uses `https://raven-sharp-smart-ai-cleaner-production.up.railway.app/api`.
+Run `node --test web/tests/*.test.cjs` for the offline browser/proxy suite (26 tests passed 13 November 2026 Brisbane). No content processing, external OAuth, deletion or generation is invoked by these tests.
 
-## Paused Android prototype
-
-`frontend/` contains an earlier Expo mobile prototype. Android work is paused. This folder is retained for reference and is not the active interface or part of the web release. Revisit a native phone app after the web product is finished and tested.
-
-Repository URLs remain stable so the existing Railway backend connection is preserved.
+See web/README.md and docs/consolidation-2026-11-13.md for the release checklist.
